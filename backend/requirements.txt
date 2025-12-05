@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+pdfminer.six 
+beautifulsoup4 
+bs4

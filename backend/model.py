@@ -1,0 +1,331 @@
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse, parse_qs
+from collections import deque
+import re
+import json
+from pdfminer.high_level import extract_text
+import tempfile
+import os
+
+# def extract_pdf_text_from_page(soup, current_url):
+#     """첨부파일 목록에서 PDF URL을 찾아 텍스트를 추출해 JSON으로 반환"""
+
+#     result_links = []
+
+#     # <dl> → <dd> → <a> 구조 확인
+#     dd = soup.find("dl")
+#     if not dd:
+#         return result_links
+
+#     # 링크들 가져오기
+#     a_tags = dd.find_all("a", href=True)
+
+#     for a in a_tags:
+#         href = a["href"]
+#         text = a.get_text(strip=True)
+
+#         # 미리보기 링크 제외
+#         if "preview" in href:
+#             continue
+
+#         # pdf 파일인지 확인
+#         if ".pdf" not in href.lower() and ".pdf" not in text.lower():
+#             continue
+
+#         # 완전한 URL 만들기
+#         pdf_url = urljoin(current_url, href)
+
+#         try:
+#             # PDF 다운로드
+#             pdf_data = requests.get(pdf_url, timeout=10).content
+
+#             # 임시 파일로 저장 후 텍스트 추출
+#             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+#                 tmp.write(pdf_data)
+#                 tmp_path = tmp.name
+
+#             extracted_text = extract_text(tmp_path)
+
+#             # temp 파일 삭제
+#             os.remove(tmp_path)
+
+#             # JSON 항목 생성
+#             result_links.append({
+#                 "filename": text,
+#                 "url": pdf_url,
+#                 "content": extracted_text.strip()
+#             })
+
+#         except Exception as e:
+#             print("PDF 처리 오류:", e)
+#             continue
+
+#     return result_links
+
+def extract_pdf_files_from_page(soup, current_url, save_dir="../pdf/"):
+    """첨부파일 목록(fieldBox 내부)에서 PDF를 찾아 ../pdf/ 디렉토리에 저장하고 파일 경로를 반환"""
+
+    result_links = []
+
+    # 저장 경로 없으면 생성
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    # fieldBox 안에서만 찾기
+    field_box = soup.find(class_="fieldBox")
+    if not field_box:
+        return result_links
+
+    # fieldBox 안의 dl → dd → a 태그 검색
+    dl_tag = field_box.find("dl")
+    if not dl_tag:
+        return result_links
+
+    a_tags = dl_tag.find_all("a", href=True)
+
+    for a in a_tags:
+        href = a["href"]
+        text = a.get_text(strip=True)
+
+        # 미리보기 링크 제외
+        if "preview" in href:
+            continue
+
+        # PDF 파일인지 확인
+        if ".pdf" not in href.lower() and ".pdf" not in text.lower():
+            continue
+
+        pdf_url = urljoin(current_url, href)
+
+        try:
+            response = requests.get(pdf_url, timeout=10)
+            response.raise_for_status()
+
+            # 파일명 정리
+            # href로 처리하다보면 파일명이 없는 경우도 있으니 text 사용
+            filename = text
+            if not filename.lower().endswith(".pdf"):
+                filename += ".pdf"
+
+            # 경로 생성
+            save_path = os.path.join(save_dir, filename)
+            #print(response.content)
+
+            # 파일 저장
+            with open(save_path, "wb") as f:
+                f.write(response.content)
+
+            result_links.append({
+                "filename": filename,
+                "url": pdf_url,
+                "saved_path": save_path
+            })
+
+        except Exception as e:
+            print("PDF 저장 오류:", e)
+            continue
+
+    return result_links
+
+# ----------------------------------------------------------
+# 본문(title, contents, pdf 텍스트) 추출
+# ----------------------------------------------------------
+def parse_page_content(url, html):
+    soup = BeautifulSoup(html, "html.parser")
+
+    # 제목 추출
+    h1_tags = soup.find_all("h1", class_="tit")
+    title = None
+    if h1_tags:
+        target_h1 = h1_tags[-1] 
+        title_parts = []
+        
+        for element in target_h1.children:
+        # strong은 건너뛰기
+            if element.name == "strong":
+                continue
+        # 텍스트 노드만 수집
+            if isinstance(element, str):
+                title_parts.append(element.strip())
+        title = " ".join([t for t in title_parts if t])
+
+    # 본문 내용
+    content_tag = soup.find(class_="viewBox")
+    contents = content_tag.get_text(" ", strip=True) if content_tag else ""
+
+    # 첨부파일 PDF 추출
+    pdf_files = []
+    field_box = soup.find(class_="fieldBox")
+
+    if field_box:
+        pdf_file = extract_pdf_files_from_page(soup, url)
+        if pdf_file:
+            for i in pdf_file:
+                pdf_files.append(i)
+
+    return {
+        "title": title,
+        "contents": contents,
+        "link": pdf_files
+    }
+
+
+
+def parse_goView_call(attribute_value):
+    """
+    onclick="javascript:goView('a','b','c', ...)"
+    에서 goView 인자들을 추출하여 URL 문자열로 변환해주는 함수
+    """
+    match = re.search(r"goView\((.*?)\)", attribute_value)
+    if not match:
+        return None
+
+    # '54793','9601676','0',... 형태에서 문자열만 추출
+    args = [arg.strip().strip("'\"") for arg in match.group(1).split(",")]
+
+    if len(args) < 7:
+        return None
+
+    boardID, boardSeq, lev, searchType, statusYN, page, opType = args
+
+    # 실제 URL 패턴 (대전교육청 CMS 규칙)
+    return f"/boardCnts/view.do?boardID={boardID}&boardSeq={boardSeq}&lev={lev}&searchType={searchType}&statusYN={statusYN}&page={page}&pSize=10&s=dsmhs&m=0201&opType={opType}"
+
+
+def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
+    visited = set()
+    queue = deque([base_url])
+    extracted_data = []
+
+    base_domain = urlparse(base_url).netloc
+
+    while queue:
+        url = queue.popleft()
+
+        if url in visited:
+            continue
+
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        fg = parsed.fragment
+
+        # --- 조건 검사 시작 -----------------------------------------------------
+        match_all = True
+        for key, target_values in target_params.items():
+            val, opt = target_values
+            # 1) URL에 해당 key 자체가 없으면 실패
+            if key not in qs:
+                match_all = False
+                break
+
+            # 2) 값 리스트가 None이 아닐 때, 값이 포함되는지 검사
+            if val is not None:
+                # qs[key]는 ['54793'] 같이 리스트 형태
+                if not any(i in qs[key] if opt==1 else i not in qs[key] for i in val):
+                    match_all = False
+                    break
+        
+        # --- fragment 조건 검사 -----------------------------------------------------
+        for key, target_values in target_fragment.items():
+            # 1) In 중에 1개라도 있으면 True
+            if key == "In":
+                if target_values is not None:
+                # fragment = string 형태
+                    if not any(True for val in target_values if val == fg):
+                        match_all = False
+                        break
+
+            # 2) notIn 중에 1개라도 있으면 False
+            else:
+                if target_values is not None:
+                    if any(True for val in target_values if val == fg):
+                        match_all = False
+                        break
+
+        # 모든 조건이 충족되지 않으면 skip
+        if not match_all:
+            continue
+        # -------------------------------------------------------------------------
+
+        visited.add(url)
+        #print("크롤링:", url)
+
+        try:
+            response = requests.get(url, timeout=5)
+        except:
+            continue
+
+        if response.status_code != 200:
+            continue
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        html = response.text
+
+        # ----------------------------------------------------------------------
+        # 페이지 내용 추출(title / contents / pdf text)
+        extracted_data.append(
+            [parse_page_content(url, html),
+            url]
+        )
+        # ----------------------------------------------------------------------
+
+        for a in soup.find_all("a", href=True):
+            # 1) href 처리
+            if a.has_attr("href"):
+                next_url = urljoin(url, a["href"])
+                if urlparse(next_url).netloc == base_domain:
+                    if next_url not in visited:
+                        queue.append(next_url)
+
+            # 2) onclick="goView(...)" 처리
+            if a.has_attr("onclick"):
+                url_from_js = parse_goView_call(a["onclick"])
+                if url_from_js:
+                    next_url = urljoin(url, url_from_js)
+                    if urlparse(next_url).netloc == base_domain:
+                        if next_url not in visited:
+                            queue.append(next_url)
+
+    return extracted_data
+
+
+# 사용 예시
+base_url = "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54793&boardSeq=9606314&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0201&opType=N"
+
+target_params = {
+    "boardID": [["54793"],1],
+    "boardSeq": [["0"],0],
+}
+
+target_fragment = {
+    "notIn" :["showMenu","gnb","container","wrap","contents"],
+    "In":None
+}
+
+# parsed = urlparse(base_url)
+# qs = parse_qs(parsed.query)
+# print(qs)
+# print(parsed.fragment)
+# print([i for i in target_params.keys() if target_params[i] is not None])
+# path=os.path.join('../pdf/','a.txt')
+# print(path)
+
+found_pages = crawl_site_with_params(base_url, target_params, target_fragment)
+
+print("\n=== 크롤링된 페이지 ===")
+for page in found_pages:
+    
+    #stop = input()
+    print(f'link: {page[1]}')
+    print(
+    f'''content: 
+        'title': {page[0]['title']},
+
+        'contents': {page[0]['contents']}
+
+        'link': {page[0]['link']}
+''')
+    print('--------------------------------------')
+
