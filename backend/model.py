@@ -4,9 +4,7 @@ from urllib.parse import urljoin, urlparse, parse_qs
 from collections import deque
 import re
 import json
-from pdfminer.high_level import extract_text
-import tempfile
-import os
+
 
 # def extract_pdf_text_from_page(soup, current_url):
 #     """첨부파일 목록에서 PDF URL을 찾아 텍스트를 추출해 JSON으로 반환"""
@@ -63,14 +61,13 @@ import os
 
 #     return result_links
 
-def extract_pdf_files_from_page(soup, current_url, save_dir="../pdf/"):
-    """첨부파일 목록(fieldBox 내부)에서 PDF를 찾아 ../pdf/ 디렉토리에 저장하고 파일 경로를 반환"""
+def extract_pdf_links_from_page(soup, current_url):
+    """
+    fieldBox 내부에서 PDF 링크(URL)만 추출하여 리스트로 반환
+    다운로드는 하지 않음
+    """
 
     result_links = []
-
-    # 저장 경로 없으면 생성
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
 
     # fieldBox 안에서만 찾기
     field_box = soup.find(class_="fieldBox")
@@ -92,39 +89,23 @@ def extract_pdf_files_from_page(soup, current_url, save_dir="../pdf/"):
         if "preview" in href:
             continue
 
-        # PDF 파일인지 확인
+        # PDF인지 확인
         if ".pdf" not in href.lower() and ".pdf" not in text.lower():
             continue
 
+        # 절대 URL 변환
         pdf_url = urljoin(current_url, href)
 
-        try:
-            response = requests.get(pdf_url, timeout=10)
-            response.raise_for_status()
+        # 파일명 후보 (텍스트 기반)
+        filename = text
+        if not filename.lower().endswith(".pdf"):
+            filename += ".pdf"
 
-            # 파일명 정리
-            # href로 처리하다보면 파일명이 없는 경우도 있으니 text 사용
-            filename = text
-            if not filename.lower().endswith(".pdf"):
-                filename += ".pdf"
-
-            # 경로 생성
-            save_path = os.path.join(save_dir, filename)
-            #print(response.content)
-
-            # 파일 저장
-            with open(save_path, "wb") as f:
-                f.write(response.content)
-
-            result_links.append({
-                "filename": filename,
-                "url": pdf_url,
-                "saved_path": save_path
-            })
-
-        except Exception as e:
-            print("PDF 저장 오류:", e)
-            continue
+        # 결과 추가
+        result_links.append({
+            "filename": filename,
+            "url": pdf_url
+        })
 
     return result_links
 
@@ -159,7 +140,7 @@ def parse_page_content(url, html):
     field_box = soup.find(class_="fieldBox")
 
     if field_box:
-        pdf_file = extract_pdf_files_from_page(soup, url)
+        pdf_file = extract_pdf_links_from_page(soup, url)
         if pdf_file:
             for i in pdf_file:
                 pdf_files.append(i)
@@ -167,7 +148,7 @@ def parse_page_content(url, html):
     return {
         "title": title,
         "contents": contents,
-        "link": pdf_files
+        "pdf": pdf_files
     }
 
 
@@ -195,10 +176,10 @@ def parse_goView_call(attribute_value):
 
 def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
     visited = set()
-    queue = deque([base_url])
+    queue = deque(base_url)
     extracted_data = []
 
-    base_domain = urlparse(base_url).netloc
+    base_domain = urlparse(base_url[0]).netloc
 
     while queue:
         url = queue.popleft()
@@ -249,6 +230,7 @@ def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
         # -------------------------------------------------------------------------
 
         visited.add(url)
+        print(f'doing...{url}')
         #print("크롤링:", url)
 
         try:
@@ -265,9 +247,10 @@ def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
 
         # ----------------------------------------------------------------------
         # 페이지 내용 추출(title / contents / pdf text)
+        data=parse_page_content(url, html)
+        data['link']=url
         extracted_data.append(
-            [parse_page_content(url, html),
-            url]
+            data
         )
         # ----------------------------------------------------------------------
 
@@ -292,10 +275,10 @@ def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
 
 
 # 사용 예시
-base_url = "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54793&boardSeq=9606314&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0201&opType=N"
+base_url = ["https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54793&boardSeq=9606314&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0201&opType=N","https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54794&boardSeq=9608539&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0202&opType=N"]
 
 target_params = {
-    "boardID": [["54793"],1],
+    "boardID": [["54793", "54794"],1],
     "boardSeq": [["0"],0],
 }
 
@@ -312,20 +295,21 @@ target_fragment = {
 # path=os.path.join('../pdf/','a.txt')
 # print(path)
 
-found_pages = crawl_site_with_params(base_url, target_params, target_fragment)
+found_pages = {'crawling':crawl_site_with_params(base_url, target_params, target_fragment)}
 
 print("\n=== 크롤링된 페이지 ===")
-for page in found_pages:
-    
-    #stop = input()
-    print(f'link: {page[1]}')
-    print(
-    f'''content: 
-        'title': {page[0]['title']},
 
-        'contents': {page[0]['contents']}
+# for page in found_pages:
+#     #stop = input()
+#     print(f'link: {page[1]}')
+#     print(
+#     f'''content: 
+#         'title': {page[0]['title']},
 
-        'link': {page[0]['link']}
-''')
-    print('--------------------------------------')
+#         'contents': {page[0]['contents']}
 
+#         'link': {page[0]['link']}
+# ''')
+#     print('--------------------------------------')
+print(found_pages)
+print(len(found_pages))
