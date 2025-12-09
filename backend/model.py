@@ -4,63 +4,6 @@ from urllib.parse import urljoin, urlparse, parse_qs
 from collections import deque
 import re
 import json
-
-
-# def extract_pdf_text_from_page(soup, current_url):
-#     """첨부파일 목록에서 PDF URL을 찾아 텍스트를 추출해 JSON으로 반환"""
-
-#     result_links = []
-
-#     # <dl> → <dd> → <a> 구조 확인
-#     dd = soup.find("dl")
-#     if not dd:
-#         return result_links
-
-#     # 링크들 가져오기
-#     a_tags = dd.find_all("a", href=True)
-
-#     for a in a_tags:
-#         href = a["href"]
-#         text = a.get_text(strip=True)
-
-#         # 미리보기 링크 제외
-#         if "preview" in href:
-#             continue
-
-#         # pdf 파일인지 확인
-#         if ".pdf" not in href.lower() and ".pdf" not in text.lower():
-#             continue
-
-#         # 완전한 URL 만들기
-#         pdf_url = urljoin(current_url, href)
-
-#         try:
-#             # PDF 다운로드
-#             pdf_data = requests.get(pdf_url, timeout=10).content
-
-#             # 임시 파일로 저장 후 텍스트 추출
-#             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-#                 tmp.write(pdf_data)
-#                 tmp_path = tmp.name
-
-#             extracted_text = extract_text(tmp_path)
-
-#             # temp 파일 삭제
-#             os.remove(tmp_path)
-
-#             # JSON 항목 생성
-#             result_links.append({
-#                 "filename": text,
-#                 "url": pdf_url,
-#                 "content": extracted_text.strip()
-#             })
-
-#         except Exception as e:
-#             print("PDF 처리 오류:", e)
-#             continue
-
-#     return result_links
-
 def extract_pdf_links_from_page(soup, current_url):
     """
     fieldBox 내부에서 PDF 링크(URL)만 추출하여 리스트로 반환
@@ -230,7 +173,7 @@ def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
         # -------------------------------------------------------------------------
 
         visited.add(url)
-        print(f'doing...{url}')
+        #print(f'doing...{url}')
         #print("크롤링:", url)
 
         try:
@@ -296,8 +239,10 @@ target_fragment = {
 # print(path)
 
 found_pages = {'crawling':crawl_site_with_params(base_url, target_params, target_fragment)}
+with open("crawling.json", "w", encoding="utf-8") as f:
+    json.dump(found_pages, f, ensure_ascii=False, indent=4)
 
-print("\n=== 크롤링된 페이지 ===")
+#print("\n=== 크롤링된 페이지 ===")
 
 # for page in found_pages:
 #     #stop = input()
@@ -311,5 +256,5 @@ print("\n=== 크롤링된 페이지 ===")
 #         'link': {page[0]['link']}
 # ''')
 #     print('--------------------------------------')
-print(found_pages)
-print(len(found_pages))
+#print(found_pages)
+#print(len(found_pages))
