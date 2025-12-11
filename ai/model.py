@@ -132,8 +132,8 @@ def search(query, k=5):
     
     return results
 
-# llm = ChatOllama(model="qwen2.5:1.5b", temperature=0.1)
-llm = ChatOllama(model="qwen2.5:0.5b", temperature=0.1)
+llm = ChatOllama(model="qwen2.5:1.5b", temperature=0.1)
+# llm = ChatOllama(model="qwen2.5:0.5b", temperature=0.1)
 
 template = """
 ### 응답 가이드라인 (최우선 규칙) ###
