@@ -218,10 +218,10 @@ def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
 
 
 # 사용 예시
-base_url = ["https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54793&boardSeq=9606314&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0201&opType=N","https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54794&boardSeq=9608539&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0202&opType=N"]
+base_url = ["https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54793&boardSeq=9606314&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0201&opType=N","https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54794&boardSeq=9608539&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0202&opType=N", "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54813&boardSeq=9325361&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0505&opType=N"]
 
 target_params = {
-    "boardID": [["54793", "54794"],1],
+    "boardID": [["54793", "54794", "54813"],1],
     "boardSeq": [["0"],0],
 }
 
@@ -258,3 +258,4 @@ with open("crawling.json", "w", encoding="utf-8") as f:
 #     print('--------------------------------------')
 #print(found_pages)
 #print(len(found_pages))
+
