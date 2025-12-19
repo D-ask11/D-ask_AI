@@ -1,2 +1,5 @@
 venv/
 chroma.db/
+__pycache__
+crawling.json
+backend/
