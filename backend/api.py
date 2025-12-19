@@ -2,12 +2,15 @@ import requests
 import json
 import time
 import re
-
-
+import os
+import dotenv
+#-----api key
+dotenv.load_dotenv()
+api_key = os.getenv('API_KEY')
 # ===========================
 # 수집 함수
 # ===========================
-def fetch_schedule(pIndex, key, base_url, params_template, info):
+def fetch_schedule(pIndex, base_url, params_template, info):
     params = params_template.copy()
     params["pIndex"] = pIndex
 
@@ -57,7 +60,7 @@ def main(key, base_url, info, file):
     i=1
     while(True):  # pIndex 1 ~ 6
         print(f"📡 수집중: pIndex = {i} ...")
-        schedule = fetch_schedule(i, key=KEY, base_url=BASE_URL, params_template=PARAMS_TEMPLATE, info=INFO)
+        schedule = fetch_schedule(i, base_url=BASE_URL, params_template=PARAMS_TEMPLATE, info=INFO)
 
         if schedule:
             all_schedules.extend(schedule)
@@ -75,11 +78,11 @@ def main(key, base_url, info, file):
     print(f"총 레코드 수: {len(all_schedules)}")
 
 if __name__ == "__main__":
-    main(key="c0fe0c84eb084c4b8ddc1dfa0c8e2d18", base_url="https://open.neis.go.kr/hub/SchoolSchedule", 
+    main(key=api_key, base_url="https://open.neis.go.kr/hub/SchoolSchedule", 
          info={'날짜':'AA_YMD', '이름':'EVENT_NM', "1학년":"ONE_GRADE_EVENT_YN", "2학년":"TW_GRADE_EVENT_YN", "3학년":"THREE_GRADE_EVENT_YN", "종류":"SBTR_DD_SC_NM"},
          file='school_schedules.json'
          )
-    main(key="c0fe0c84eb084c4b8ddc1dfa0c8e2d18", base_url="https://open.neis.go.kr/hub/mealServiceDietInfo", 
+    main(key=api_key, base_url="https://open.neis.go.kr/hub/mealServiceDietInfo", 
          info={'날짜':'MLSV_YMD','시간':'MMEAL_SC_NM', '요리명':'DDISH_NM', '칼로리':'CAL_INFO'},
          file='school_meal.json'
          )
@@ -99,7 +102,12 @@ if __name__ == "__main__":
                             # print(k, i['날짜'])
                             continue
                         mli+=k+" "
-                    li.append(mli[:len(mli)-1])
+                    mli=mli[:len(mli)-1]
+                    for l in range(len(mli)-1, -1, -1):
+                        if mli[l]!="." and False==mli[l].isdigit():
+                            break
+                    
+                    li.append(mli[:l+1])
             i['요리명']=li
 
     with open('school_meal.json', 'w', encoding='utf-8') as f:

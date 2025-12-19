@@ -117,13 +117,27 @@ def parse_goView_call(attribute_value):
     return f"/boardCnts/view.do?boardID={boardID}&boardSeq={boardSeq}&lev={lev}&searchType={searchType}&statusYN={statusYN}&page={page}&pSize=10&s=dsmhs&m=0201&opType={opType}"
 
 
-def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
+def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict, login_url:str, login_data:dict):
+    #---------------------------------------------
+    session = requests.Session()
+    res = session.post(login_url, login_data, allow_redirects=True)
+    if "doLoginSSL.do" in res.text:
+        res = session.get(
+            "https://dsmhs.djsch.kr/doLoginSSL.do",
+            headers={"Referer": login_url}
+        )
+    # res = session.get("https://dsmhs.djsch.kr/index.do")
+    # print(session.cookies.get_dict())
+    # print(res.status_code)
+    # print(res.text)
+    # print(res.url)
+    #---------------------------------------------
     visited = set()
     queue = deque(base_url)
     extracted_data = []
 
     base_domain = urlparse(base_url[0]).netloc
-
+    #--------------------------------------------------
     while queue:
         url = queue.popleft()
 
@@ -177,12 +191,14 @@ def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
         #print("크롤링:", url)
 
         try:
-            response = requests.get(url, timeout=5)
+            response = session.get(url, timeout=5)
         except:
             continue
 
         if response.status_code != 200:
-            continue
+            visited.remove(url)
+            queue.append(url)
+            
 
         soup = BeautifulSoup(response.text, "html.parser")
 
@@ -216,9 +232,20 @@ def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
 
     return extracted_data
 
+#로그인 메타데이터
+login_url = 'https://dsmhs.djsch.kr/doLogin.do'
+login_data = {
+    "usrType": "imem",
+    "usrID": 'kimwonshin',
+    "usrPass": 'Mwkxkfahdi1!',
+    "LastSysID": "dsmhs"
+}
 
-# 사용 예시
-base_url = ["https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54793&boardSeq=9606314&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0201&opType=N","https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54794&boardSeq=9608539&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0202&opType=N", "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54813&boardSeq=9325361&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0505&opType=N"]
+# 크롤링 메타데이터
+base_url = ["https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54793&boardSeq=9606314&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0201&opType=N",
+            "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54794&boardSeq=9608539&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0202&opType=N",
+            "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54813&boardSeq=9325361&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0505&opType=N"
+            ]
 
 target_params = {
     "boardID": [["54793", "54794", "54813"],1],
@@ -237,10 +264,11 @@ target_fragment = {
 # print([i for i in target_params.keys() if target_params[i] is not None])
 # path=os.path.join('../pdf/','a.txt')
 # print(path)
+if __name__ == "__main__":
+    found_pages = {'crawling':crawl_site_with_params(base_url, target_params, target_fragment, login_url, login_data)}
 
-found_pages = {'crawling':crawl_site_with_params(base_url, target_params, target_fragment)}
-with open("crawling.json", "w", encoding="utf-8") as f:
-    json.dump(found_pages, f, ensure_ascii=False, indent=4)
+    with open("crawling.json", "w", encoding="utf-8") as f:
+        json.dump(found_pages, f, ensure_ascii=False, indent=4)
 
 #print("\n=== 크롤링된 페이지 ===")
 
@@ -259,3 +287,54 @@ with open("crawling.json", "w", encoding="utf-8") as f:
 #print(found_pages)
 #print(len(found_pages))
 
+import requests
+
+session = requests.Session()
+
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Referer": "https://dsmhs.djsch.kr/login.do?s=dsmhs",
+    "Origin": "https://dsmhs.djsch.kr"
+}
+
+# 1️⃣ 로그인 페이지 먼저 접근 (세션 쿠키 확보)
+# res=session.get("https://dsmhs.djsch.kr/login.do?s=dsmhs", headers=headers)
+# print(res.text)
+# 2️⃣ 로그인 요청
+login_data = {
+    "usrType": "imem",
+    "usrID": "Kimwonshin",
+    "usrPass": "Mwkxkfahdi1!",
+    "LastSysID": "dsmhs"
+}
+
+res = session.post(
+    "https://dsmhs.djsch.kr/login.do?s=dsmhs",
+    data=login_data,
+    headers=headers,
+    allow_redirects=True
+)
+print(res.text)
+
+# 3️⃣ ⭐ 이게 핵심: 로그인 후 메인 페이지 한 번 더
+res=session.get("https://dsmhs.djsch.kr/index.do?s=dsmhs", headers=headers)
+# print(res.text)
+# 4️⃣ 게시글 접근
+url = "https://dsmhs.djsch.kr/boardCnts/view.do"
+params = {
+    "boardID": "54813",
+    "boardSeq": "9325361",
+    "lev": "0",
+    "searchType": "null",
+    "statusYN": "W",
+    "page": "1",
+    "pSize": "10",
+    "s": "dsmhs",
+    "m": "0505",
+    "opType": "N"
+}
+
+res = session.get(url, params=params, headers=headers)
+session.close()
+# print(res.text)

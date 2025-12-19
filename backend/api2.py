@@ -2,7 +2,6 @@ from pycomcigan import TimeTable, get_school_code
 import json
 import datetime
 
-
 #학교 설정=대마고
 school_name="대덕소프트웨어마이스터고등학교"
 # 시간표 가져오기
@@ -47,12 +46,12 @@ def extract_from_comcigan_to_json(timetable:TimeTable, monday:datetime.date):
         ret[str(i)+'학년']=grade
     
     return ret 
-
-ret=[]
-ret.append(extract_from_comcigan_to_json(this_timetable.timetable, today))
-ret.append(extract_from_comcigan_to_json(next_timetable.timetable, nextday))
-with open("comcigan.json", 'w', encoding="utf-8") as f:
-    json.dump(ret, f, ensure_ascii=False, indent=2)
+if __name__ == "__main__":
+    ret=[]
+    ret.append(extract_from_comcigan_to_json(this_timetable.timetable, today))
+    ret.append(extract_from_comcigan_to_json(next_timetable.timetable, nextday))
+    with open("comcigan.json", 'w', encoding="utf-8") as f:
+        json.dump(ret, f, ensure_ascii=False, indent=2)
 
 # 3학년 1반 화요일 시간표
 # print(timetable.timetable[3][1][timetable.TUESDAY])
