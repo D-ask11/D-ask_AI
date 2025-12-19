@@ -11,12 +11,11 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # model.py 기준 폴더
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 JSON_FILE = os.path.join(BASE_DIR, "..", "crawling.json")
 DB_DIR = os.path.join(BASE_DIR, "..", "chroma.db")
 
 embedding_model = HuggingFaceEmbeddings(
-    # model_name="sentence-transformers/all-MiniLM-L6-v2"
     model_name = "jhgan/ko-sbert-nli"
 )
 
@@ -26,27 +25,26 @@ def load_json(file_path=JSON_FILE):
         data = json.load(f)
 
     items = data.get("crawling", [])
-    
     documents = []
     for item in items:
         title = item.get("title", "")
         contents = item.get("contents", "")
-        
-        # PDF 파일 링크를 본문에 포함시켜 LLM이 참고하도록 함
+
+        # PDF 링크 텍스트
         pdf_links = item.get("pdf", [])
         link_text = ""
         for pdf in pdf_links:
             link_text += f"\n- {pdf.get('filename')}: {pdf.get('url')}"
-        
-        # page_content를 title + contents + link_text로 구성
-        full_content = title + ". " + contents + link_text
-        
+
+        # 제목 제거: contents + pdf 링크만 embedding
+        page_content = contents + link_text
+
         documents.append(
             Document(
-                page_content=full_content,
+                page_content=page_content,
                 metadata={
-                    "title": title,
-                    "link": item.get("link", "") # 메인 게시글 링크
+                    "title": title,                 # 제목은 metadata
+                    "link": item.get("link", "")    # 게시글 링크
                 }
             )
         )
@@ -90,7 +88,7 @@ def load_db():
         )
         print("기존 VectorDB 불러오기 완료")
         
-    #이 부분이 반드시 추가되어야 합니다!
+    #이 부분이 반드시 추가되어야 합니다
     try:
         count = vectordb._collection.count()
         print(f"DB 컬렉션 내 문서 수 확인: {count}개")
@@ -133,7 +131,6 @@ def search(query, k=5):
     return results
 
 llm = ChatOllama(model="qwen2.5:1.5b", temperature=0.1)
-# llm = ChatOllama(model="qwen2.5:0.5b", temperature=0.1)
 
 template = """
 ### 응답 가이드라인 (최우선 규칙) ###
@@ -146,7 +143,9 @@ template = """
 
 # [현재 시점] 섹션 (LLM에게 실시간 날짜를 알려주는 핵심)
 [현재 시점]
-{current_date}
+{current_date}을 기준으로 가장가까운 연도 한가지만 설명해주세요.
+만약 특정 연도가 있다면 그 연도만 설명해주세요.
+만약 현재 연도보다 연도가 더 높으면 그 연도를 기준으로 설명해주세요
 
 #학교 정보 외 질문 거부 지침 강화
 학교 정보(학사 일정, 가정 통신문, 규정 등)와 **무관한 일반 상식, 실시간 정보 (예: 날씨, 세계 뉴스 등)**는 답변할 수 없습니다. **단, [현재 시점]에 대한 질문(예: 오늘은 몇월 며칠이야?)에 대해서는 이 정보를 사용하여 정확히 답변하세요.**
@@ -180,7 +179,7 @@ template = """
 # ... (PromptTemplate 재정의)
 
 prompt = PromptTemplate(
-    input_variables=["context", "question"],
+    input_variables=["context", "question", "current_date"],
     template=template
 )
 
@@ -194,7 +193,7 @@ def docs_to_text(docs):
 
 def get_current_date():
     """현재 날짜와 요일을 문자열로 변환"""
-    return datetime.datetime.now().strftime("%Y년 %M월 %D일 %A요일")
+    return datetime.datetime.now().strftime("%Y년 %m월 %d일 %A")
 
 rag_chain = (
     RunnablePassthrough.assign(  # 입력으로 받은 question을 다음 단계로 전달하면서 context를 추가
@@ -211,11 +210,6 @@ def get_rag_chain():
     """초기화된 RAG 체인 객체를 반환"""
     return rag_chain
 
-# def rag_inference(question: str) -> str:
-#     """실제 추론을 수행하는 핵심 함수"""
-#     # 전역 변수로 초기화된 rag_chain 사용
-#     result = rag_chain.invoke({"question": question})
-#     return result
 
 def rag_inference(question: str) -> str:
     """실제 추론을 수행하는 핵심 함수 (수정된 디버깅 로직)"""
@@ -256,9 +250,3 @@ def rag_inference(question: str) -> str:
         # LLM 호출 오류 (Ollama 연결, 모델 로딩 등) 발생 시
         print(f"RAG 체인 실행 중 치명적인 오류 발생: {e}")
         return f"AI 추론 오류 발생: {e}"
-
-
-
-# user_question = "오늘은 몇월 몇일이야?"
-# result = rag_chain.invoke({"question": user_question})
-# print(result)
