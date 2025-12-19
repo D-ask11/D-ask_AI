@@ -7,7 +7,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5501/calenderPage/index.html"],
+    allow_origins=["*"],
     allow_methods=["POST"],
     allow_headers=["Content-Type"],
 )
