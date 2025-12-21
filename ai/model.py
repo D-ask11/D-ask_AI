@@ -12,43 +12,159 @@ from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-JSON_FILE = os.path.join(BASE_DIR, "..", "crawling.json")
+DATA_DIR = os.path.join(BASE_DIR, "..", "data")
 DB_DIR = os.path.join(BASE_DIR, "..", "chroma.db")
 
 embedding_model = HuggingFaceEmbeddings(
     model_name = "jhgan/ko-sbert-nli"
 )
 
-def load_json(file_path=JSON_FILE):
-    """JSON 파일 읽어서 Document 리스트로 변환"""
+
+
+#crawling.json
+def load_crawling_json(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    items = data.get("crawling", [])
     documents = []
-    for item in items:
-        title = item.get("title", "")
-        contents = item.get("contents", "")
 
-        # PDF 링크 텍스트
+    for item in data.get("crawling", []):
+        contents = item.get("contents", "")
         pdf_links = item.get("pdf", [])
+
         link_text = ""
         for pdf in pdf_links:
             link_text += f"\n- {pdf.get('filename')}: {pdf.get('url')}"
 
-        # 제목 제거: contents + pdf 링크만 embedding
-        page_content = contents + link_text
-
         documents.append(
             Document(
-                page_content=page_content,
+                page_content=contents + link_text,
                 metadata={
-                    "title": title,                 # 제목은 metadata
-                    "link": item.get("link", "")    # 게시글 링크
+                    "title": item.get("title", ""),
+                    "type": "crawling",
+                    "source": "crawling.json"
                 }
             )
         )
     return documents
+
+#comcigan.json
+def load_comcigan_json(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    documents = []
+
+    for item in data:
+        for grade, classes in item.items():
+            for class_name, dates in classes.items():
+                for date, periods in dates.items():
+                    lines = [f"{grade} {class_name} {date.replace('-', ' ')}"]
+                    for period, info in periods.items():
+                        subject = info.get("과목", "")
+                        teacher = info.get("선생님", "")
+                        lines.append(f"{period}: {subject} ({teacher})")
+
+                    documents.append(
+                        Document(
+                            page_content="\n".join(lines),
+                            metadata={
+                                "type": "timetable",
+                                "grade": grade,
+                                "class": class_name,
+                                "date": date,
+                                "source": "comcigan.json"
+                            }
+                        )
+                    )
+    return documents
+
+# school_meal.json
+def load_school_meal_json(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    documents = []
+
+    for item in data:
+        date = item.get("날짜", "")
+        time = item.get("시간", "")
+        menu = ", ".join(item.get("요리명", []))
+        calorie = item.get("칼로리", "")
+
+        content = (
+            f"{date} {time}\n"
+            f"메뉴: {menu}\n"
+            f"칼로리: {calorie}"
+        )
+
+        documents.append(
+            Document(
+                page_content=content,
+                metadata={
+                    "type": "meal",
+                    "date": date,
+                    "time": time,
+                    "source": "school_meal.json"
+                }
+            )
+        )
+    return documents
+
+#school_schedules.json
+def load_school_schedule_json(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    documents = []
+
+    for item in data:
+        date = item.get("날짜", "")
+        name = item.get("이름", "")
+        kind = item.get("종류", "")
+
+        target = []
+        for g in ["1학년", "2학년", "3학년"]:
+            if item.get(g) == "Y":
+                target.append(g)
+
+        content = (
+            f"{date}\n"
+            f"이름: {name}\n"
+            f"종류: {kind}\n"
+            f"대상: {', '.join(target)}"
+        )
+
+        documents.append(
+            Document(
+                page_content=content,
+                metadata={
+                    "type": "schedule",
+                    "date": date,
+                    "source": "school_schedules.json"
+                }
+            )
+        )
+    return documents
+
+def load_all_documents():
+    docs = []
+
+    docs += load_crawling_json(os.path.join(DATA_DIR, "crawling.json"))
+    docs += load_comcigan_json(os.path.join(DATA_DIR, "comcigan.json"))
+    docs += load_school_meal_json(os.path.join(DATA_DIR, "school_meal.json"))
+    docs += load_school_schedule_json(os.path.join(DATA_DIR, "school_schedules.json"))
+
+    print(f"총 {len(docs)}개 Document 생성")
+    return docs
+
+# documents = load_all_documents()
+# vectordb = Chroma.from_documents(
+#     documents,
+#     embedding=embedding_model,
+#     persist_directory=DB_DIR,
+#     collection_name="my_rag_collection"
+# )
 
 def init_db(documents):
     """DB 생성 후 persist"""
@@ -70,7 +186,7 @@ def load_db():
     
     if not os.path.exists(DB_DIR) or not os.listdir(DB_DIR):
         # 1. DB가 없으면 생성 시에도 컬렉션 이름 지정
-        documents = load_json()
+        documents = load_all_documents()
         vectordb = Chroma.from_documents(
             documents,
             embedding=embedding_model,
