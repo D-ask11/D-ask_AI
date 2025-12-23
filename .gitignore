@@ -1,2 +1,5 @@
 .vscode/
 .venv/
+ai/
+data/
+chroma.db/
