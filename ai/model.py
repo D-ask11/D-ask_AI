@@ -1,4 +1,4 @@
-# 순서: DB저장 -> json 읽기 -> embedding -> vetorDB -> 유사도 검색 -> 답변 생성
+# 순서: DB저장 -> json 읽기 -> embedding -> vetorDB -> 유사도 검색 -> 답변 생성1
 
 import os
 import json

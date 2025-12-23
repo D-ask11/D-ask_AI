@@ -35,7 +35,7 @@ async def rag_query_endpoint(question: str):
         }
         
     except Exception as e:
-        # 오류 발생 시 사용자에게 적절한 메시지를 반환
+        # 오류 발생 시 사용자에게 적절한 메시지를 반환1
         return {
             "question": question,
             "answer": f"API 처리 중 오류가 발생했습니다: {str(e)}"
