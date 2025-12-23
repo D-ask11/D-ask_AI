@@ -1,12 +1,4 @@
-<<<<<<< HEAD
-.vscode/
-.venv/
-ai/
-data/
-chroma.db/
-=======
 venv/
 chroma.db/
 __pycache__
 data/
->>>>>>> feature/chatbot
