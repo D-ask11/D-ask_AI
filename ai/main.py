@@ -17,7 +17,7 @@ app.add_middleware(
 async def root():
     return {"hello":"wolrd"}
 
-@app.post("/rag/query", tags=["chatbot"])
+@app.post("/qna", tags=["chatbot"])
 async def rag_query_endpoint(question: str):
     """
     사용자의 질문을 받아 RAG 체인을 통해 답변을 생성하는 API 엔드포인트
