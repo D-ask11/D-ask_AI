@@ -76,10 +76,9 @@ def main(key, base_url, info, file):
 
     print("✅ 수집 완료!")
     print(f"총 레코드 수: {len(all_schedules)}")
-
 if __name__ == "__main__":
     main(key=api_key, base_url="https://open.neis.go.kr/hub/SchoolSchedule", 
-         info={'날짜':'AA_YMD', '이름':'EVENT_NM', "1학년":"ONE_GRADE_EVENT_YN", "2학년":"TW_GRADE_EVENT_YN", "3학년":"THREE_GRADE_EVENT_YN", "종류":"SBTR_DD_SC_NM"},
+         info={'date':'AA_YMD', 'title':'EVENT_NM'},
          file='school_schedules.json'
          )
     main(key=api_key, base_url="https://open.neis.go.kr/hub/mealServiceDietInfo", 
