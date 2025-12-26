@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from models import CalendarRequest, CalendarItem
+from backend.models import CalendarRequest, CalendarItem
 import json
 import os
 
