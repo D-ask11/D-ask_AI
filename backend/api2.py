@@ -50,7 +50,7 @@ if __name__ == "__main__":
     ret=[]
     ret.append(extract_from_comcigan_to_json(this_timetable.timetable, today))
     ret.append(extract_from_comcigan_to_json(next_timetable.timetable, nextday))
-    with open("comcigan.json", 'w', encoding="utf-8") as f:
+    with open("./data/comcigan.json", 'w', encoding="utf-8") as f:
         json.dump(ret, f, ensure_ascii=False, indent=2)
 
 # 3학년 1반 화요일 시간표

@@ -4,6 +4,7 @@ import time
 import re
 import os
 import dotenv
+import datetime
 #-----api key
 dotenv.load_dotenv()
 api_key = os.getenv('API_KEY')
@@ -79,14 +80,14 @@ def main(key, base_url, info, file):
 if __name__ == "__main__":
     main(key=api_key, base_url="https://open.neis.go.kr/hub/SchoolSchedule", 
          info={'date':'AA_YMD', 'title':'EVENT_NM'},
-         file='school_schedules.json'
+         file='./data/school_schedules.json'
          )
     main(key=api_key, base_url="https://open.neis.go.kr/hub/mealServiceDietInfo", 
          info={'날짜':'MLSV_YMD','시간':'MMEAL_SC_NM', '요리명':'DDISH_NM', '칼로리':'CAL_INFO'},
-         file='school_meal.json'
+         file='./data/school_meal.json'
          )
     print('전처리')
-    with open('school_meal.json', 'r', encoding='utf-8') as f:
+    with open('./data/school_meal.json', 'r', encoding='utf-8') as f:
         file=json.load(f)
         patt=re.compile(r'([^\.\ ]+)[\.\ ]')
         exclude=re.compile(r'[\d\(]+')
@@ -109,8 +110,19 @@ if __name__ == "__main__":
                     li.append(mli[:l+1])
             i['요리명']=li
 
-    with open('school_meal.json', 'w', encoding='utf-8') as f:
+    with open('./data/school_meal.json', 'w', encoding='utf-8') as f:
         json.dump(file, f, ensure_ascii=False, indent=2)
         
     print('끄읕')
 
+    print('전처리')
+    with open('./data/school_schedules.json', 'r', encoding='utf-8') as f:
+        file=json.load(f)
+        for i in file:
+            date = datetime.datetime.strptime(i['date'], '%Y%m%d')
+            i['date'] = date.strftime('%Y-%m-%d')
+
+    with open('./data/school_schedules.json', 'w', encoding='utf-8') as f:
+        json.dump(file, f, ensure_ascii=False, indent=2)
+        
+    print('끄읕')

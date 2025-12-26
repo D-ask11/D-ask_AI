@@ -261,7 +261,7 @@ target_fragment = {
 if __name__ == "__main__":
     found_pages = {'crawling':crawl_site_with_params(base_url, target_params, target_fragment, login_url, login_data)}
 
-    with open("crawling.json", "w", encoding="utf-8") as f:
+    with open("./data/crawling.json", "w", encoding="utf-8") as f:
         json.dump(found_pages, f, ensure_ascii=False, indent=4)
 
 #print("\n=== 크롤링된 페이지 ===")
