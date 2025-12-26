@@ -1,6 +1,6 @@
 from fastapi.middleware.cors import CORSMiddleware
 from models import CalendarRequest, CalendarItem
-from database import database
+from json import json
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 
@@ -19,6 +19,6 @@ def get_calendar(req: CalendarRequest):
     today = datetime.today()
 
     if (year, month) not in database:
-        raise HTTPException(status_code=404, detail="아직 오지 않았거나 찾을 수 없는 달입니다.")
+        return ""
 
     return database[(year, month)]
