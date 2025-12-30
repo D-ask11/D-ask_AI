@@ -1,4 +1,4 @@
-# 순서: DB저장 -> json 읽기 -> embedding -> vetorDB -> 유사도 검색 -> 답변 생성1
+# 순서: DB저장 -> json 읽기 -> embedding -> vetorDB -> 유사도 검색 -> 답변 생성
 
 import os
 import json
@@ -158,14 +158,6 @@ def load_all_documents():
     print(f"총 {len(docs)}개 Document 생성")
     return docs
 
-# documents = load_all_documents()
-# vectordb = Chroma.from_documents(
-#     documents,
-#     embedding=embedding_model,
-#     persist_directory=DB_DIR,
-#     collection_name="my_rag_collection"
-# )
-
 def init_db(documents):
     """DB 생성 후 persist"""
     vectordb = Chroma.from_documents(
@@ -311,58 +303,55 @@ def get_current_date():
     """현재 날짜와 요일을 문자열로 변환"""
     return datetime.datetime.now().strftime("%Y년 %m월 %d일 %A")
 
-rag_chain = (
-    RunnablePassthrough.assign(  # 입력으로 받은 question을 다음 단계로 전달하면서 context를 추가
-        context=(lambda x: x["question"]) | retriever | docs_to_text, current_date = RunnableLambda(lambda x: get_current_date())
-        
-    )
-    | prompt  # question과 context를 포함한 입력으로 PromptTemplate 적용
-    | llm
-    | StrOutputParser()
-)
-
-
-def get_rag_chain():
-    """초기화된 RAG 체인 객체를 반환"""
-    return rag_chain
-
-
 def rag_inference(question: str) -> str:
-    """실제 추론을 수행하는 핵심 함수 (수정된 디버깅 로직)"""
+    """실제 추론을 수행하는 핵심 함수 (안전하게 rag_chain 내부에서 초기화)"""
     
-    # 1. Retriever를 사용하여 Context를 가져오는 부분만 체인으로 실행
-    # Context를 가져오는 Runnable 정의 (rag_chain의 첫 번째 단계와 동일)
+    # [1] DB 로드 및 Retriever, rag_chain 초기화 (함수 호출 시마다 실행)
+    try:
+        # DB 로드
+        vectordb = load_db()
+        retriever = vectordb.as_retriever(search_kwargs={"k": 3})
+    except Exception as e:
+        print(f"DB 또는 Retriever 초기화 오류 발생: {e}")
+        return f"DB 초기화 오류 발생: {e}"
+
+    # rag_chain 재정의 (함수 내부에서 정의되므로 안전합니다)
+    rag_chain = (
+        RunnablePassthrough.assign(
+            context=(lambda x: x["question"]) | retriever | docs_to_text,
+            current_date = RunnableLambda(lambda x: get_current_date())
+        )
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    # [2] Context Retrieval 및 디버깅
     context_retrieval_chain = (
         RunnablePassthrough()
         |(lambda x: x["question"])
         | retriever 
     )
     
-    # Context 문서 객체를 직접 가져옴
     try:
         retrieved_docs = context_retrieval_chain.invoke({"question": question})
     except Exception as e:
-        print(f"ontext Retrieval 오류 발생: {e}")
-        # 오류 발생 시 빈 리스트 반환하여 다음 단계로 진행
+        print(f"Context Retrieval 오류 발생: {e}")
         retrieved_docs = []
 
-
-    # 2. 검색 결과 터미널 출력 (디버깅)
+    # 검색 결과 터미널 출력 (디버깅)
     print("\n--- RAG 검색 결과 디버깅 시작 ---")
     if not retrieved_docs:
         print("!! 검색된 문서가 0개입니다. Retriever가 실패했거나, 질문에 대한 관련 문서가 없습니다. !!")
     for i, doc in enumerate(retrieved_docs):
-        #  여기서 PDF 링크가 포함되었는지 꼭 확인하세요!
         print(f"[{i+1}] Title: {doc.metadata.get('title', 'No title')}")
-        print(f"    Preview: {doc.page_content[:100]}...")
+        print(f"     Preview: {doc.page_content[:100]}...")
     print("------------------------------------\n")
     
-    # 3. 전역 변수로 초기화된 rag_chain 사용
+    # [3] 최종 RAG 체인 실행
     try:
-        # get_current_date()는 rag_chain 내에서 호출되므로 여기서 추가 인자는 필요 없음
         result = rag_chain.invoke({"question": question}) 
         return result
     except Exception as e:
-        # LLM 호출 오류 (Ollama 연결, 모델 로딩 등) 발생 시
         print(f"RAG 체인 실행 중 치명적인 오류 발생: {e}")
         return f"AI 추론 오류 발생: {e}"
