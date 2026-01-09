@@ -1,3 +1,4 @@
+
 from pydantic import BaseModel
 
 class CalendarRequest(BaseModel):
@@ -7,3 +8,4 @@ class CalendarRequest(BaseModel):
 class CalendarItem(BaseModel):
     title: str
     date: str
+

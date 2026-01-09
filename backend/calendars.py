@@ -1,22 +1,23 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.models import CalendarRequest, CalendarItem
-import json
 import os
+from models import CalendarItem
+import json
 
 app = FastAPI()
 
+# CORS 설정 (GET도 허용)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST"],
+    allow_methods=["GET"],  # POST → GET으로 변경
     allow_headers=["Content-Type"],
 )
 
-@app.post("/calendar", response_model=list[CalendarItem])
-def get_calendar(req: CalendarRequest):
-    year, month = req.year, req.month
+# GET으로 변경, 쿼리 파라미터 사용
+@app.get("/calendar", response_model=list[CalendarItem])
     target_prefix = f"{year}-{month:02d}"
+def get_calendar(year: int, month: int):
 
     DATA_PATH = "../data/school_schedules.json"
 
