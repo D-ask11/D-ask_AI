@@ -4,3 +4,4 @@
 .env
 chroma.db/
 data/
+.idea/
