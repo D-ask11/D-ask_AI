@@ -1,357 +1,378 @@
 # 순서: DB저장 -> json 읽기 -> embedding -> vetorDB -> 유사도 검색 -> 답변 생성
-
 import os
 import json
 import datetime
+import re
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_community.docstore.document import Document
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
+from typing import List, Dict, Any, Optional
 
+# 설정 및 초기화
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "..", "data")
 DB_DIR = os.path.join(BASE_DIR, "..", "chroma.db")
+COLLECTION_NAME = "my_rag_collection"
 
+# 임베딩 모델 (global scope 유지)
 embedding_model = HuggingFaceEmbeddings(
-    model_name = "jhgan/ko-sbert-nli"
+    model_name="intfloat/multilingual-e5-small",
+    model_kwargs={"device": "cpu"},
+    encode_kwargs={"normalize_embeddings": True},
 )
 
+# LLM (global scope 유지)
+llm = ChatOllama(model="qwen2.5:1.5b", temperature=0.1)
 
+# [핵심] JSON 데이터 메모리 캐싱 (global scope 유지)
+CACHED_MEAL_DATA: Dict[str, Dict[str, str]] = {}
+CACHED_TIMETABLE_DATA: Dict[str, Dict[str, str]] = {}
 
-#crawling.json
+def init_cached_data():
+    """서버 시작 시 급식/시간표 JSON을 메모리에 로드하여 조회용 딕셔너리 구성"""
+    global CACHED_MEAL_DATA, CACHED_TIMETABLE_DATA
+    
+    # 1. 급식 데이터 로드
+    meal_path = os.path.join(DATA_DIR, "school_meal.json")
+    if os.path.exists(meal_path):
+        try:
+            with open(meal_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for item in data:
+                    raw_date = str(item.get("날짜", "")).replace("-", "").strip()
+                    if len(raw_date) == 8:
+                        date_key = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
+                    else:
+                        continue 
+                    
+                    time_key = item.get("시간", "")
+                    menu = ", ".join(item.get("요리명", []))
+                    
+                    if date_key not in CACHED_MEAL_DATA:
+                        CACHED_MEAL_DATA[date_key] = {}
+                    CACHED_MEAL_DATA[date_key][time_key] = f"[{time_key}] {menu} ({item.get('칼로리', '')})"
+        except Exception as e:
+            print(f"급식 데이터 로드 오류: {e}")
+
+    # 2. 시간표 데이터 로드
+    time_path = os.path.join(DATA_DIR, "comcigan.json")
+    if os.path.exists(time_path):
+        try:
+            with open(time_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    for item in data:
+                        for grade, classes in item.items():
+                            for class_name, dates in classes.items():
+                                g_match = re.search(r"\d+", grade)
+                                c_match = re.search(r"\d+", class_name)
+                                
+                                if g_match and c_match:
+                                    class_key = f"{g_match.group(0)}-{c_match.group(0)}"
+                                else:
+                                    class_key = f"{grade}-{class_name}" 
+
+                                if class_key not in CACHED_TIMETABLE_DATA:
+                                    CACHED_TIMETABLE_DATA[class_key] = {}
+                                
+                                for raw_date_key, periods in dates.items():
+                                    date_match = re.search(r"(\d{8})", raw_date_key)
+                                    if date_match:
+                                        raw_date_8digit = date_match.group(1)
+                                        date_key = f"{raw_date_8digit[:4]}-{raw_date_8digit[4:6]}-{raw_date_8digit[6:]}"
+                                    else:
+                                        continue 
+
+                                    lines = []
+                                    for period, info in periods.items():
+                                        if "원래 과목" in info:
+                                            original_data = info["원래 과목"]
+                                            # 데이터 구조 처리를 단순화하여 원래 코드 로직 유지
+                                            if isinstance(original_data, dict) and period in original_data:
+                                                original = original_data[period]
+                                                lines.append(f"{period}교시: **{info.get('과목','')}** ({info.get('선생님','')} / *원래: {original.get('과목','')}* )")
+                                            else:
+                                                lines.append(f"{period}교시: **{info.get('과목','')}** ({info.get('선생님','')} / *원래 변경 정보 오류* )")
+                                        else:
+                                            lines.append(f"{period}교시: {info.get('과목','')} ({info.get('선생님','')})")
+
+                                    CACHED_TIMETABLE_DATA[class_key][date_key] = "\n".join(lines)
+                
+        except Exception as e:
+            print(f"시간표 데이터 로드 오류: {e}")
+
+# 데이터 로드 실행
+init_cached_data()
+
+# JSON -> LangChain Document 로드 및 DB 함수 (DB 구성을 위해 필요)
 def load_crawling_json(file_path):
+    """일반 공지사항(crawling) 문서를 로드"""
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-
     documents = []
-
     for item in data.get("crawling", []):
         contents = item.get("contents", "")
         pdf_links = item.get("pdf", [])
-
-        link_text = ""
-        for pdf in pdf_links:
-            link_text += f"\n- {pdf.get('filename')}: {pdf.get('url')}"
-
-        documents.append(
-            Document(
-                page_content=contents + link_text,
-                metadata={
-                    "title": item.get("title", ""),
-                    "type": "crawling",
-                    "source": "crawling.json"
-                }
-            )
-        )
+        link_text = "\n".join([f"- {pdf.get('filename')}: {pdf.get('url')}" for pdf in pdf_links])
+        documents.append(Document(page_content=contents + link_text, metadata={"title": item.get("title", ""), "type": "general", "source": "crawling.json"}))
     return documents
 
-#comcigan.json
-def load_comcigan_json(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    documents = []
-
-    for item in data:
-        for grade, classes in item.items():
-            for class_name, dates in classes.items():
-                for date, periods in dates.items():
-                    lines = [f"{grade} {class_name} {date.replace('-', ' ')}"]
-                    for period, info in periods.items():
-                        subject = info.get("과목", "")
-                        teacher = info.get("선생님", "")
-                        lines.append(f"{period}: {subject} ({teacher})")
-
-                    documents.append(
-                        Document(
-                            page_content="\n".join(lines),
-                            metadata={
-                                "type": "timetable",
-                                "grade": grade,
-                                "class": class_name,
-                                "date": date,
-                                "source": "comcigan.json"
-                            }
-                        )
-                    )
-    return documents
-
-# school_meal.json
-def load_school_meal_json(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    documents = []
-
-    for item in data:
-        date = item.get("날짜", "")
-        time = item.get("시간", "")
-        menu = ", ".join(item.get("요리명", []))
-        calorie = item.get("칼로리", "")
-
-        content = (
-            f"{date} {time}\n"
-            f"메뉴: {menu}\n"
-            f"칼로리: {calorie}"
-        )
-
-        documents.append(
-            Document(
-                page_content=content,
-                metadata={
-                    "type": "meal",
-                    "date": date,
-                    "time": time,
-                    "source": "school_meal.json"
-                }
-            )
-        )
-    return documents
-
-#school_schedules.json
-def load_school_schedule_json(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    documents = []
-
-    for item in data:
-        date = item.get("날짜", "")
-        name = item.get("이름", "")
-        kind = item.get("종류", "")
-
-        target = []
-        for g in ["1학년", "2학년", "3학년"]:
-            if item.get(g) == "Y":
-                target.append(g)
-
-        content = (
-            f"{date}\n"
-            f"이름: {name}\n"
-            f"종류: {kind}\n"
-            f"대상: {', '.join(target)}"
-        )
-
-        documents.append(
-            Document(
-                page_content=content,
-                metadata={
-                    "type": "schedule",
-                    "date": date,
-                    "source": "school_schedules.json"
-                }
-            )
-        )
-    return documents
 
 def load_all_documents():
+    """모든 JSON을 LangChain Document로 로드 (DB 생성용)"""
     docs = []
-
-    docs += load_crawling_json(os.path.join(DATA_DIR, "crawling.json"))
-    docs += load_comcigan_json(os.path.join(DATA_DIR, "comcigan.json"))
-    docs += load_school_meal_json(os.path.join(DATA_DIR, "school_meal.json"))
-    docs += load_school_schedule_json(os.path.join(DATA_DIR, "school_schedules.json"))
-
-    print(f"총 {len(docs)}개 Document 생성")
+    docs.extend(load_crawling_json(os.path.join(DATA_DIR, "crawling.json")))
+    print(f"총 {len(docs)}개 Document 생성 (일반 및 학사일정)")
     return docs
 
-def init_db(documents):
-    """DB 생성 후 persist"""
-    vectordb = Chroma.from_documents(
-        documents,
-        embedding=embedding_model,
-        persist_directory=DB_DIR
-    )
-    vectordb.persist()
-    print("VectorDB 최초 생성 완료")
-    return vectordb
-
-    
 def load_db():
-    # Chroma는 기본 컬렉션 이름이 'langchain'입니다. 이를 명시적으로 지정합니다.
-    COLLECTION_NAME = "my_rag_collection" # 명시적인 이름을 사용합니다.
-    print(f"DEBUG: DB_DIR 경로 = {DB_DIR}")
-    print(f"DEBUG: DB_DIR 존재 여부 = {os.path.exists(DB_DIR)}")
-    
+    """ChromaDB를 로드하거나 존재하지 않으면 새로 생성"""
     if not os.path.exists(DB_DIR) or not os.listdir(DB_DIR):
-        # 1. DB가 없으면 생성 시에도 컬렉션 이름 지정
+        print("VectorDB 파일이 없으므로, 새롭게 생성합니다...")
         documents = load_all_documents()
+        if not documents:
+            print("경고: DB 생성을 위한 문서(crawling/schedule)가 없습니다.")
+            return None
+
         vectordb = Chroma.from_documents(
             documents,
             embedding=embedding_model,
             persist_directory=DB_DIR,
-            collection_name=COLLECTION_NAME # 컬렉션 이름 명시
+            collection_name=COLLECTION_NAME
         )
-        vectordb.persist()
         print("VectorDB 최초 생성 완료")
     else:
-        # 2. DB 불러오기 시에도 컬렉션 이름 지정
-        vectordb = Chroma(
-            embedding_function=embedding_model,
-            persist_directory=DB_DIR,
-            collection_name=COLLECTION_NAME # 컬렉션 이름 명시
-        )
-        print("기존 VectorDB 불러오기 완료")
-        
-    #이 부분이 반드시 추가되어야 합니다
-    try:
-        count = vectordb._collection.count()
-        print(f"DB 컬렉션 내 문서 수 확인: {count}개")
-        if count == 0:
-            print("경고: 문서 수가 0개입니다. DB 재구축이 필요합니다.")
-    except Exception as e:
-        print(f"DB 카운트 중 오류 발생: {e}")
-        
+        try:
+            vectordb = Chroma(
+                embedding_function=embedding_model,
+                persist_directory=DB_DIR,
+                collection_name=COLLECTION_NAME
+            )
+            print("기존 VectorDB 불러오기 완료")
+        except Exception as e:
+            print(f"경고: VectorDB 로드 중 심각한 오류 발생. 오류: {e}")
+            return None
+    
     return vectordb
 
+# Helper 함수: 날짜, 요일, 학년/반 추출
+def get_current_date_str():
+    """현재 날짜를 YYYY-MM-DD 형식 문자열로 반환"""
+    return datetime.datetime.now().strftime("%Y-%m-%d")
 
-
-def add_documents(new_data):
-    """새 데이터 추가"""
-    vectordb = load_db()
-    new_documents = [
-        Document(page_content=item.get("content", ""), metadata={"title": item.get("title", "")})
-        for item in new_data
-    ]
-    vectordb.add_documents(new_documents)
-    vectordb.persist()
-    print(f"새 문서 {len(new_documents)}개 추가 완료")
-    return vectordb
-
-def search(query, k=5):
-    """유사도 검색 (Retriever 사용)"""
-    vectordb = load_db()
+def extract_grade_class(question: str) -> tuple[Optional[str], Optional[str]]:
+    """질문에서 학년과 반 정보를 추출 (예: 1학년 4반, 1-4)"""
+    match1 = re.search(r"(\d)\s*학년\s*(\d)\s*반", question)
+    if match1:
+        return match1.group(1), match1.group(2)
     
-    # retriever 생성
-    retriever = vectordb.as_retriever(search_kwargs={"k": k})
-    
-    # 검색
-    results = retriever.get_relevant_documents(query)
-    
-    for i, doc in enumerate(results):
-        print(f"--- Result {i+1} ---")
-        print("Title:", doc.metadata.get("title", "No title"))
-        print("Content Preview:", doc.page_content[:200], "\n")
-    
-    return results
+    match2 = re.search(r"(\d)[/-](\d)", question)
+    if match2:
+        return match2.group(1), match2.group(2)
+        
+    return None, None
 
-llm = ChatOllama(model="qwen2.5:1.5b", temperature=0.1)
+def extract_date_from_question(question: str) -> Optional[str]:
+    """질문에서 날짜/요일을 추출하여 YYYY-MM-DD 형식으로 반환"""
+    today = datetime.datetime.now()
+    
+    day_map = {"월요일": 0, "화요일": 1, "수요일": 2, "목요일": 3, "금요일": 4, 
+               "토요일": 5, "일요일": 6, "월": 0, "화": 1, "수": 2, "목": 3, "금": 4}
+    
+    # 1. 요일 처리 
+    for day_name, day_index in day_map.items():
+        if day_name in question:
+            current_day_index = today.weekday()
+            days_until_target = (day_index - current_day_index + 7) % 7
+            target_date = today + datetime.timedelta(days=days_until_target)
+            return target_date.strftime("%Y-%m-%d")
 
+    # 2. 오늘/내일 처리
+    if "오늘" in question:
+        return today.strftime("%Y-%m-%d")
+    if "내일" in question:
+        return (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    # 3. 구체적인 날짜 (YYYY년 MM월 DD일)
+    full_date_match = re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일", question)
+    if full_date_match:
+        y, m, d = full_date_match.groups()
+        return f"{y}-{int(m):02d}-{int(d):02d}"
+    
+    # 4. 연도 없는 날짜 (MM월 DD일)
+    partial_date_match = re.search(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일", question)
+    if partial_date_match:
+        m, d = partial_date_match.groups()
+        return f"{today.year}-{int(m):02d}-{int(d):02d}"
+        
+    return None
+
+def get_type_from_question(question: str) -> str:
+    if any(k in question for k in ["급식","아침","조식","점심","중식","저녁","석식","메뉴","밥"]):
+        return "meal"
+    if any(k in question for k in ["시간표","교시","수업"]):
+        return "timetable"
+    if any(k in question for k in ["일정","행사","언제","날짜"]):
+        return "schedule"
+    return "general"
+
+def docs_to_text(docs: List[Document]) -> str:
+    # RAG 검색 결과를 프롬프트에 넣을 텍스트로 변환
+    return "\n---\n".join([f"Source: {doc.metadata.get('source', 'Unknown')} (Type: {doc.metadata.get('type', 'Unknown')})\n{doc.page_content}" for doc in docs])
+
+# 핸들러: 급식 (Meal)
+def handle_meal(question: str) -> str:
+    """급식 질문에 대해 캐시된 데이터를 조회하여 정확한 정보를 반환"""
+    target_date = extract_date_from_question(question)
+    if not target_date:
+        target_date = get_current_date_str()
+
+    day_data = CACHED_MEAL_DATA.get(target_date)
+    
+    if not day_data:
+        return f"죄송합니다. 날짜({target_date})에 대한 급식 정보가 데이터 파일에 없습니다."
+
+    result = []
+    
+    # 시간대 필터링
+    if any(k in question for k in ["아침", "조식"]):
+        if "조식" in day_data: result.append(day_data["조식"])
+    elif any(k in question for k in ["점심", "중식"]):
+        if "중식" in day_data: result.append(day_data["중식"])
+    elif any(k in question for k in ["저녁", "석식"]):
+        if "석식" in day_data: result.append(day_data["석식"])
+    else:
+        # 시간대 언급이 없으면 해당 날짜의 모든 급식 출력
+        for time_k in ["조식", "중식", "석식"]:
+            if time_k in day_data:
+                result.append(day_data[time_k])
+
+    if not result:
+        return f"{target_date}에는 해당 시간대 급식이 없습니다."
+        
+    return f"## {target_date} 급식 정보 ##\n" + "\n".join(result)
+
+
+# 핸들러: 시간표 (Timetable)
+def handle_timetable(question: str) -> str:
+    """시간표 질문에 대해 캐시된 데이터를 조회하여 정확한 정보를 반환"""
+    grade, cls = extract_grade_class(question)
+    target_date = extract_date_from_question(question)
+
+    if not grade or not cls:
+        return "시간표를 찾으려면 학년과 반 정보를 정확히 입력해주세요. (예: 1학년 1반)"
+    if not target_date:
+        target_date = get_current_date_str()
+        
+    class_key = f"{grade}-{cls}"
+    class_data = CACHED_TIMETABLE_DATA.get(class_key)
+    
+    if not class_data:
+        return f"{grade}학년 {cls}반의 시간표 데이터가 캐시에 없습니다. (키: {class_key})"
+        
+    timetable_text = class_data.get(target_date)
+    
+    if not timetable_text:
+        day_of_week = datetime.datetime.strptime(target_date, "%Y-%m-%d").strftime("%A")
+        return f"{target_date} ({day_of_week}) 일자 {grade}학년 {cls}반 시간표 정보는 데이터 파일에 없습니다."
+
+    return f"## {target_date} {grade}학년 {cls}반 시간표 ##\n{timetable_text}"
+
+# -------------------------
+# 프롬프트 템플릿 (general 질문용)
+# -------------------------
 template = """
-### 응답 가이드라인 (최우선 규칙) ###
-당신은 대덕소프트웨어마이스터 고등학교에 대한 정보만 제공하는 지식 도우미입니다.
+당신은 대덕소프트웨어마이스터 고등학교 정보 도우미입니다.
+아래 [문맥 정보]를 바탕으로 사용자 [질문]에 한국어로 정확히 답변하세요.
 
-**!!보안/개인정보 경고!!**
-개인정보(이름, 주소, 연락처 등)나 보안이 필요한 정보는 절대 다루지 않으며, [문서]에 없는 내용을 추측하거나 지어내지 않습니다.
+**주의사항:**
+1. [문맥 정보]에 없는 내용은 절대 추측하거나 지어내지 마세요.
+2. 정보가 없다고 명시되어 있으면, '관련 정보를 찾을 수 없습니다'라고 답변하세요.
+3. 답변은 [답변] 섹션만 출력하고, PDF 링크는 [참고 자료] 섹션에만 Markdown 리스트로 나열하세요. 링크가 없으면 '없음'이라고 명확히 출력하세요.
 
----
+[현재 시점]: {current_date}
 
-# [현재 시점] 섹션 (LLM에게 실시간 날짜를 알려주는 핵심)
-[현재 시점]
-{current_date}을 기준으로 가장가까운 연도 한가지만 설명해주세요.
-만약 특정 연도가 있다면 그 연도만 설명해주세요.
-만약 현재 연도보다 연도가 더 높으면 그 연도를 기준으로 설명해주세요
-
-#학교 정보 외 질문 거부 지침 강화
-학교 정보(학사 일정, 가정 통신문, 규정 등)와 **무관한 일반 상식, 실시간 정보 (예: 날씨, 세계 뉴스 등)**는 답변할 수 없습니다. **단, [현재 시점]에 대한 질문(예: 오늘은 몇월 며칠이야?)에 대해서는 이 정보를 사용하여 정확히 답변하세요.**
-
----
-
-### 일반 응답 규칙 (RAG 실행 시) ###
-위의 예외 사항에 해당하지 않는다면, 아래 [문서]를 참고하여 질문에 한국어로 정확히 답변하세요.
-**!!가장 중요!! [문서]에 없는 내용은 절대 추측하거나 지어내지 마세요.** 오직 문서에 포함된 내용만을 바탕으로 답변해야 합니다.
-
-***데이터 시간 우선순위 (필수)***
-1. **1순위:** [문서]에서 **'2025년'**에 관련된 정보가 있다면 최우선적으로 해당 정보를 사용하여 답변하세요.
-2. **2순위:** 만약 2025년 정보가 없다면, 질문과 관련된 **가장 최근 연도**의 정보를 사용하세요.
-
----
-
-### 답변 구성 형식 ###
-
-1. **내용 요약:** [문서] 내용이 질문에 대한 충분한 답변을 제공한다면, 상세하고 명확하게 답변하세요.
-2. **링크 첨부 필수:** 답변에 사용된 원본 자료나 참고 가능한 **PDF 문서의 링크(URL)**는 답변 하단에 **[참고 자료]** 섹션을 만들어 **반드시 모두 포함**하세요. (메타데이터나 본문에 포함된 링크 활용)
-
-!!최종 중요!! [문서] 내에 **질문의 키워드와 관련된 내용(제목 포함)이 단 한 줄이라도 포함되어 있다면**, 최대한 답변을 구성하고 **링크를 제공하여 답변을 완료**하세요. 
-만약 **질문과 전혀 무관한 문서만 검색**되었거나 답변할 수 없는 일반 질문이라면, **'관련 정보를 찾을 수 없습니다.'** 라고 답변하세요.
-
-[문서]
+[문맥 정보]
 {context}
 
 [질문]
 {question}
+
+---
+[답변]
+
+[참고 자료]
 """
-# ... (PromptTemplate 재정의)
 
-prompt = PromptTemplate(
-    input_variables=["context", "question", "current_date"],
-    template=template
-)
-
-# retriever 준비
-vectordb = load_db()
-retriever = vectordb.as_retriever(search_kwargs={"k": 3})
-
-def docs_to_text(docs):
-    """Document 객체 리스트 → 문자열"""
-    return "\n".join([doc.page_content for doc in docs])
-
-def get_current_date():
-    """현재 날짜와 요일을 문자열로 변환"""
-    return datetime.datetime.now().strftime("%Y년 %m월 %d일 %A")
-
+# Main RAG Inference
 def rag_inference(question: str) -> str:
-    """실제 추론을 수행하는 핵심 함수 (안전하게 rag_chain 내부에서 초기화)"""
-    
-    # [1] DB 로드 및 Retriever, rag_chain 초기화 (함수 호출 시마다 실행)
-    try:
-        # DB 로드
-        vectordb = load_db()
-        retriever = vectordb.as_retriever(search_kwargs={"k": 3})
-    except Exception as e:
-        print(f"DB 또는 Retriever 초기화 오류 발생: {e}")
-        return f"DB 초기화 오류 발생: {e}"
+    q_type = get_type_from_question(question)
+    context_text = ""
+    current_date_str = datetime.datetime.now().strftime("%Y년 %m월 %d일 %A")
 
-    # rag_chain 재정의 (함수 내부에서 정의되므로 안전합니다)
-    rag_chain = (
-        RunnablePassthrough.assign(
-            context=(lambda x: x["question"]) | retriever | docs_to_text,
-            current_date = RunnableLambda(lambda x: get_current_date())
+    # 1. 급식/시간표/일정은 LLM 추론 없이 바로 답변 (빠른 응답)
+    if q_type == "meal":
+        context_text = handle_meal(question)
+        # LLM을 거치지 않으므로 프롬프트 템플릿 형식에 맞게 직접 포맷팅
+        return f"[답변]\n{context_text}\n\n[참고 자료]\n없음"
+        
+    elif q_type == "timetable":
+        context_text = handle_timetable(question)
+        # LLM을 거치지 않으므로 프롬프트 템플릿 형식에 맞게 직접 포맷팅
+        return f"[답변]\n{context_text}\n\n[참고 자료]\n없음"
+        
+    elif q_type == "schedule":
+        # RAG나 LLM을 거치지 않고 바로 응답을 반환 (고정 답변)
+        return "[답변]\n별도의 학사일정 정보는 제공하지 않으며, 학교 공식 캘린더를 참고해주세요.\n\n[참고 자료]\n없음"
+    
+    # 2. 일반 정보(general)는 ChromaDB 검색 및 LLM 추론 (RAG)
+    elif q_type == "general":
+        try:
+            vectordb = load_db() 
+            
+            if vectordb is None:
+                context_text = "경고: DB에 저장된 일반 정보 문서를 찾을 수 없거나 DB 로드에 실패했습니다."
+            else:
+                search_kwargs = {"k": 5}
+                retriever = vectordb.as_retriever(search_kwargs=search_kwargs)
+                docs = retriever.invoke(question)
+                context_text = docs_to_text(docs)
+                
+                # --- [디버깅 출력 유지] ---
+                print("\n--- RAG 검색 결과 (Context) ---")
+                if docs:
+                    print(context_text)
+                else:
+                    print("!! RAG 검색 결과 없음 !!")
+                print("------------------------------\n")
+            
+                if not context_text:
+                    context_text = "죄송합니다. 요청하신 정보에 대한 문서를 찾을 수 없습니다."
+        
+        except Exception as e:
+            context_text = f"**[DB 검색 오류 발생]** {e}"
+        
+        # 3. LLM 생성 (general 질문에만 LLM 사용)
+        prompt = PromptTemplate(
+            input_variables=["context", "question", "current_date"],
+            template=template
         )
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
-
-    # [2] Context Retrieval 및 디버깅
-    context_retrieval_chain = (
-        RunnablePassthrough()
-        |(lambda x: x["question"])
-        | retriever 
-    )
-    
-    try:
-        retrieved_docs = context_retrieval_chain.invoke({"question": question})
-    except Exception as e:
-        print(f"Context Retrieval 오류 발생: {e}")
-        retrieved_docs = []
-
-    # 검색 결과 터미널 출력 (디버깅)
-    print("\n--- RAG 검색 결과 디버깅 시작 ---")
-    if not retrieved_docs:
-        print("!! 검색된 문서가 0개입니다. Retriever가 실패했거나, 질문에 대한 관련 문서가 없습니다. !!")
-    for i, doc in enumerate(retrieved_docs):
-        print(f"[{i+1}] Title: {doc.metadata.get('title', 'No title')}")
-        print(f"     Preview: {doc.page_content[:100]}...")
-    print("------------------------------------\n")
-    
-    # [3] 최종 RAG 체인 실행
-    try:
-        result = rag_chain.invoke({"question": question}) 
-        return result
-    except Exception as e:
-        print(f"RAG 체인 실행 중 치명적인 오류 발생: {e}")
-        return f"AI 추론 오류 발생: {e}"
+        
+        # 체인을 여기서 정의하여 general 질문에만 사용
+        chain = prompt | llm | StrOutputParser()
+        
+        try:
+            response = chain.invoke({
+                "context": context_text, 
+                "question": question,
+                "current_date": current_date_str
+            })
+            return response
+        except Exception as e:
+            return f"AI 추론 중 오류 발생: {e}"
+            
+    # 정의되지 않은 유형은 일반 질문으로 처리되도록 함
+    return "질문 유형을 인식할 수 없습니다. '급식', '시간표', '일정' 또는 일반 질문으로 다시 시도해주세요."
