@@ -2,23 +2,7 @@ from pycomcigan import TimeTable, get_school_code
 import json
 import datetime
 
-#학교 설정=대마고
-school_name="대덕소프트웨어마이스터고등학교"
-# 시간표 가져오기
-# week_num: 0이면 이번주, 1이면 다음주
-this_timetable = TimeTable(school_name, week_num=0)
-next_timetable = TimeTable(school_name, week_num=1)
-
-today = datetime.date.today()
-idx=datetime.timedelta(days=today.weekday())
-
-today=today-idx
-nextday = today + datetime.timedelta(weeks=1)
-
-weekday=['월','화','수','목','금']
-
-
-def extract_from_comcigan_to_json(timetable:TimeTable, monday:datetime.date):
+def extract_from_comcigan_to_json(timetable:TimeTable, monday:datetime.date, weekday):
     ret={}
     for i in range(1,4):
         grade={}
@@ -46,10 +30,25 @@ def extract_from_comcigan_to_json(timetable:TimeTable, monday:datetime.date):
         ret[str(i)+'학년']=grade
     
     return ret 
-if __name__ == "__main__":
+def make_json():
+    #학교 설정=대마고
+    school_name="대덕소프트웨어마이스터고등학교"
+    # 시간표 가져오기
+    # week_num: 0이면 이번주, 1이면 다음주
+    this_timetable = TimeTable(school_name, week_num=0)
+    next_timetable = TimeTable(school_name, week_num=1)
+
+    today = datetime.date.today()
+    idx=datetime.timedelta(days=today.weekday())
+
+    today=today-idx
+    nextday = today + datetime.timedelta(weeks=1)
+
+    weekday=['월','화','수','목','금']
+
     ret=[]
-    ret.append(extract_from_comcigan_to_json(this_timetable.timetable, today))
-    ret.append(extract_from_comcigan_to_json(next_timetable.timetable, nextday))
+    ret.append(extract_from_comcigan_to_json(this_timetable.timetable, today, weekday))
+    ret.append(extract_from_comcigan_to_json(next_timetable.timetable, nextday, weekday))
     with open("./data/comcigan.json", 'w', encoding="utf-8") as f:
         json.dump(ret, f, ensure_ascii=False, indent=2)
 

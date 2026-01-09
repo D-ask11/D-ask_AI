@@ -5,9 +5,7 @@ import re
 import os
 import dotenv
 import datetime
-#-----api key
-dotenv.load_dotenv()
-api_key = os.getenv('API_KEY')
+
 # ===========================
 # 수집 함수
 # ===========================
@@ -77,7 +75,11 @@ def main(key, base_url, info, file):
 
     print("✅ 수집 완료!")
     print(f"총 레코드 수: {len(all_schedules)}")
-if __name__ == "__main__":
+
+def make_json():
+    #-----api key
+    dotenv.load_dotenv()
+    api_key = os.getenv('API_KEY')
     main(key=api_key, base_url="https://open.neis.go.kr/hub/SchoolSchedule", 
          info={'date':'AA_YMD', 'title':'EVENT_NM'},
          file='./data/school_schedules.json'

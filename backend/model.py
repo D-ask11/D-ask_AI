@@ -226,40 +226,40 @@ def crawl_site_with_params(base_url, target_params: dict, target_fragment:dict):
 
     return extracted_data
 
-#로그인 메타데이터
-login_url = 'https://dsmhs.djsch.kr/doLogin.do'
-login_data = {
-    "usrType": "imem",
-    "usrID": 'kimwonshin',
-    "usrPass": 'Mwkxkfahdi1!',
-    "LastSysID": "dsmhs"
-}
+def make_json():
+    #로그인 메타데이터
+    login_url = 'https://dsmhs.djsch.kr/doLogin.do'
+    login_data = {
+        "usrType": "imem",
+        "usrID": 'kimwonshin',
+        "usrPass": 'Mwkxkfahdi1!',
+        "LastSysID": "dsmhs"
+    }
 
-# 크롤링 메타데이터
-base_url = ["https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54793&boardSeq=9606314&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0201&opType=N",
-            "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54794&boardSeq=9608539&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0202&opType=N",
-            "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54813&boardSeq=9325361&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0505&opType=N"
-            ]
+    # 크롤링 메타데이터
+    base_url = ["https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54793&boardSeq=9606314&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0201&opType=N",
+                "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54794&boardSeq=9608539&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0202&opType=N",
+                "https://dsmhs.djsch.kr/boardCnts/view.do?boardID=54813&boardSeq=9325361&lev=0&searchType=null&statusYN=W&page=1&pSize=10&s=dsmhs&m=0505&opType=N"
+                ]
 
-target_params = {
-    "boardID": [["54793", "54794", "54813"],1],
-    "boardSeq": [["0"],0],
-}
+    target_params = {
+        "boardID": [["54793", "54794", "54813"],1],
+        "boardSeq": [["0"],0],
+    }
 
-target_fragment = {
-    "notIn" :["showMenu","gnb","container","wrap","contents"],
-    "In":None
-}
+    target_fragment = {
+        "notIn" :["showMenu","gnb","container","wrap","contents"],
+        "In":None
+    }
 
-# parsed = urlparse(base_url)
-# qs = parse_qs(parsed.query)
-# print(qs)
-# print(parsed.fragment)
-# print([i for i in target_params.keys() if target_params[i] is not None])
-# path=os.path.join('../pdf/','a.txt')
-# print(path)
-if __name__ == "__main__":
-    found_pages = {'crawling':crawl_site_with_params(base_url, target_params, target_fragment, login_url, login_data)}
+    # parsed = urlparse(base_url)
+    # qs = parse_qs(parsed.query)
+    # print(qs)
+    # print(parsed.fragment)
+    # print([i for i in target_params.keys() if target_params[i] is not None])
+    # path=os.path.join('../pdf/','a.txt')
+    # print(path)
+    found_pages = {'crawling':crawl_site_with_params(base_url, target_params, target_fragment)}
 
     with open("./data/crawling.json", "w", encoding="utf-8") as f:
         json.dump(found_pages, f, ensure_ascii=False, indent=4)
