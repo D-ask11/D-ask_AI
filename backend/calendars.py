@@ -16,8 +16,8 @@ app.add_middleware(
 
 # GET으로 변경, 쿼리 파라미터 사용
 @app.get("/calendar", response_model=list[CalendarItem])
-    target_prefix = f"{year}-{month:02d}"
 def get_calendar(year: int, month: int):
+    target_prefix = f"{year}-{month:02d}"
 
     DATA_PATH = "../data/school_schedules.json"
 

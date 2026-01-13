@@ -3,6 +3,7 @@ import os
 import json
 import datetime
 import re
+from langchain_community.document_loaders import PyPDFLoader
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_community.docstore.document import Document
@@ -30,6 +31,26 @@ llm = ChatOllama(model="qwen2.5:1.5b", temperature=0.1)
 # [핵심] JSON 데이터 메모리 캐싱 (global scope 유지)
 CACHED_MEAL_DATA: Dict[str, Dict[str, str]] = {}
 CACHED_TIMETABLE_DATA: Dict[str, Dict[str, str]] = {}
+
+def load_pdf_documents(data_dir):
+    """DATA_DIR 내의 모든 PDF 파일을 로드"""
+    pdf_docs = []
+    for filename in os.listdir(data_dir):
+        if filename.endswith(".pdf"):
+            file_path = os.path.join(data_dir, filename)
+            try:
+                loader = PyPDFLoader(file_path)
+                # PDF의 각 페이지를 Document 객체로 변환
+                pages = loader.load()
+                for page in pages:
+                    # 메타데이터에 파일 타입과 출처 명시
+                    page.metadata["type"] = "school_rule" 
+                    page.metadata["source"] = filename
+                pdf_docs.extend(pages)
+                print(f"로드 성공: {filename}")
+            except Exception as e:
+                print(f"PDF 로드 실패 ({filename}): {e}")
+    return pdf_docs
 
 def init_cached_data():
     """서버 시작 시 급식/시간표 JSON을 메모리에 로드하여 조회용 딕셔너리 구성"""
@@ -122,10 +143,18 @@ def load_crawling_json(file_path):
 
 
 def load_all_documents():
-    """모든 JSON을 LangChain Document로 로드 (DB 생성용)"""
+    """기존 JSON 데이터와 새로운 PDF 데이터를 모두 로드"""
     docs = []
-    docs.extend(load_crawling_json(os.path.join(DATA_DIR, "crawling.json")))
-    print(f"총 {len(docs)}개 Document 생성 (일반 및 학사일정)")
+    
+    # 1. 기존 JSON 공지사항 로드
+    crawling_path = os.path.join(DATA_DIR, "crawling.json")
+    if os.path.exists(crawling_path):
+        docs.extend(load_crawling_json(crawling_path))
+    
+    # 2. 추가된 PDF 문서 로드 (인증제, 기숙사 규정 등)
+    docs.extend(load_pdf_documents(DATA_DIR))
+    
+    print(f"총 {len(docs)}개 Document 생성 완료 (JSON + PDF)")
     return docs
 
 def load_db():
@@ -289,9 +318,11 @@ template = """
 아래 [문맥 정보]를 바탕으로 사용자 [질문]에 한국어로 정확히 답변하세요.
 
 **주의사항:**
-1. [문맥 정보]에 없는 내용은 절대 추측하거나 지어내지 마세요.
-2. 정보가 없다고 명시되어 있으면, '관련 정보를 찾을 수 없습니다'라고 답변하세요.
-3. 답변은 [답변] 섹션만 출력하고, PDF 링크는 [참고 자료] 섹션에만 Markdown 리스트로 나열하세요. 링크가 없으면 '없음'이라고 명확히 출력하세요.
+1. 문맥 정보에 없는 내용은 절대 추측하거나 지어내지 마세요.
+2. 정보가 없으면 '관련 정보를 찾을 수 없습니다'라고만 답변하세요.
+3. 별표(**), 샵(#), 대시(-), 리스트 기호 등 모든 마크다운 형식을 절대 사용하지 마세요.
+4. 오직 줄바꿈과 일반 텍스트로만 답변하세요.
+5. 참고 자료가 있다면 마지막에 '참고 자료: 파일명' 형태로 한 줄로 작성하세요.
 
 [현재 시점]: {current_date}
 
@@ -308,71 +339,67 @@ template = """
 """
 
 # Main RAG Inference
+VECTOR_DB = load_db()
+
 def rag_inference(question: str) -> str:
     q_type = get_type_from_question(question)
-    context_text = ""
     current_date_str = datetime.datetime.now().strftime("%Y년 %m월 %d일 %A")
-
-    # 1. 급식/시간표/일정은 LLM 추론 없이 바로 답변 (빠른 응답)
-    if q_type == "meal":
-        context_text = handle_meal(question)
-        # LLM을 거치지 않으므로 프롬프트 템플릿 형식에 맞게 직접 포맷팅
-        return f"[답변]\n{context_text}\n\n[참고 자료]\n없음"
-        
-    elif q_type == "timetable":
-        context_text = handle_timetable(question)
-        # LLM을 거치지 않으므로 프롬프트 템플릿 형식에 맞게 직접 포맷팅
-        return f"[답변]\n{context_text}\n\n[참고 자료]\n없음"
-        
-    elif q_type == "schedule":
-        # RAG나 LLM을 거치지 않고 바로 응답을 반환 (고정 답변)
-        return "[답변]\n별도의 학사일정 정보는 제공하지 않으며, 학교 공식 캘린더를 참고해주세요.\n\n[참고 자료]\n없음"
     
-    # 2. 일반 정보(general)는 ChromaDB 검색 및 LLM 추론 (RAG)
-    elif q_type == "general":
+    print(f"\n[DEBUG] 질문: {question}")
+    print(f"[DEBUG] 판정 타입: {q_type}")
+
+    # 1. 특수 질문 처리 (LLM 미사용)
+    if q_type == "meal": return handle_meal(question)
+    if q_type == "timetable": return handle_timetable(question)
+    if q_type == "schedule": return "학사일정은 캘린더를 이용해주세요."
+
+    # 2. 일반 질문 처리 (RAG + LLM)
+    if q_type == "general":
         try:
-            vectordb = load_db() 
+            if VECTOR_DB is None:
+                return "경고: DB에 저장된 일반 정보 문서를 찾을 수 없거나 DB 로드에 실패했습니다."
             
-            if vectordb is None:
-                context_text = "경고: DB에 저장된 일반 정보 문서를 찾을 수 없거나 DB 로드에 실패했습니다."
-            else:
-                search_kwargs = {"k": 5}
-                retriever = vectordb.as_retriever(search_kwargs=search_kwargs)
-                docs = retriever.invoke(question)
-                context_text = docs_to_text(docs)
+            # 검색 및 점수 확인
+            results = VECTOR_DB.similarity_search_with_score(question, k=3)
+            print(f"[DEBUG] 검색된 결과 개수: {len(results)}")
+
+            docs = []
+            for i, (doc, score) in enumerate(results):
+                # 점수 디버깅 출력
+                print(f"[DEBUG] 결과 {i+1} 점수: {score:.4f} | 내용: {doc.page_content[:20]}...")
                 
-                # --- [디버깅 출력 유지] ---
-                print("\n--- RAG 검색 결과 (Context) ---")
-                if docs:
-                    print(context_text)
-                else:
-                    print("!! RAG 검색 결과 없음 !!")
-                print("------------------------------\n")
+                # 임계값 필터링 (0.25)
+                if score <= 0.25:
+                    docs.append(doc)
             
-                if not context_text:
-                    context_text = "죄송합니다. 요청하신 정보에 대한 문서를 찾을 수 없습니다."
-        
-        except Exception as e:
-            context_text = f"**[DB 검색 오류 발생]** {e}"
-        
-        # 3. LLM 생성 (general 질문에만 LLM 사용)
-        prompt = PromptTemplate(
-            input_variables=["context", "question", "current_date"],
-            template=template
-        )
-        
-        # 체인을 여기서 정의하여 general 질문에만 사용
-        chain = prompt | llm | StrOutputParser()
-        
-        try:
-            response = chain.invoke({
-                "context": context_text, 
+            # 검색 결과 검증: 필터링 후 문서가 없으면 LLM에 질문을 넘기지 않음
+            if not docs:
+                print("!! RAG 검색 결과 없음 (유사도 부족) !!")
+                return "현재 DB에는 해당 기술 정보가 없습니다."
+
+            # --- [디버깅 출력: 필터링된 실제 문맥 정보] ---
+            context_text = docs_to_text(docs)
+            print("\n--- RAG 검색 결과 (Context) ---")
+            print(context_text)
+            print("------------------------------\n")
+
+            # 문서를 찾은 경우에만 LLM 실행
+            print(f"[DEBUG] {len(docs)}개의 문서를 바탕으로 답변 생성 중...")
+            
+            prompt = PromptTemplate(
+                input_variables=["context", "question", "current_date"], 
+                template=template
+            )
+            chain = prompt | llm | StrOutputParser()
+            
+            return chain.invoke({
+                "context": context_text,
                 "question": question,
                 "current_date": current_date_str
             })
-            return response
+
         except Exception as e:
-            return f"AI 추론 중 오류 발생: {e}"
-            
-    # 정의되지 않은 유형은 일반 질문으로 처리되도록 함
+            print(f"[ERROR] 발생: {e}")
+            return f"오류가 발생했습니다: {e}"
+
     return "질문 유형을 인식할 수 없습니다. '급식', '시간표', '일정' 또는 일반 질문으로 다시 시도해주세요."
