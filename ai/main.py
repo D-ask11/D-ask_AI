@@ -10,10 +10,10 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://d-ask.vercel.app"],
     allow_credentials=True,
-    allow_methods=["POST"],
-    allow_headers=["Content-Type"],
+    allow_methods=["POST", "OPTIONS"], # "POST", "OPTIONS"
+    allow_headers=["Content-Type"], # "Content-Type"
 )
 
 @app.get("/", tags=["main"])

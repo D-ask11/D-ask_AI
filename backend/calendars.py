@@ -9,8 +9,8 @@ app = FastAPI()
 # CORS 설정 (GET도 허용)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET"],  # POST → GET으로 변경
+    allow_origins=["https://d-ask.vercel.app"],
+    allow_methods=["GET"], 
     allow_headers=["Content-Type"],
 )
 
