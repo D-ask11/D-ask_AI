@@ -5,6 +5,7 @@ def func():
     print('호출됨')
 #   1분  1시간 1일
 t = 60 * 60 * 24
+t=1
 while True:
     time.sleep(t)
     api.make_json()

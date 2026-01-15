@@ -128,3 +128,5 @@ def make_json():
         json.dump(file, f, ensure_ascii=False, indent=2)
         
     print('끄읕')
+
+make_json()
