@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from ai.model import rag_inference
+from model import rag_inference
 
 class QuestionRequest(BaseModel):
     question: str
@@ -15,10 +15,6 @@ app.add_middleware(
     allow_methods=["POST", "OPTIONS"], # "POST", "OPTIONS"
     allow_headers=["Content-Type"], # "Content-Type"
 )
-
-@app.get("/", tags=["main"])
-async def root():
-    return {"hello":"wolrd"}
 
 @app.post("/qna", tags=["chatbot"])
 async def rag_query_endpoint(question: QuestionRequest):
