@@ -25,7 +25,6 @@ async def rag_query_endpoint(question: QuestionRequest):
         return {"answer": "질문을 입력해 주세요."}
     
     try:
-        # model.py의 핵심 추론 함수를 호출하여 답변을 받습니다.
         answer = rag_inference(question.question)
         
         return {
@@ -34,7 +33,6 @@ async def rag_query_endpoint(question: QuestionRequest):
         }
         
     except Exception as e:
-        # 오류 발생 시 사용자에게 적절한 메시지를 반환1
         return {
             "question": question.question,
             "answer": f"API 처리 중 오류가 발생했습니다: {str(e)}"

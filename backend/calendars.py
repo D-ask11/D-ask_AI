@@ -19,7 +19,7 @@ app.add_middleware(
 def get_calendar(year: int, month: int):
     target_prefix = f"{year}-{month:02d}"
 
-    DATA_PATH = "../data/school_schedules.json"
+    DATA_PATH = "./data/school_schedules.json"
 
     with open(DATA_PATH, "r", encoding="utf-8") as f:
         json_data = json.load(f)

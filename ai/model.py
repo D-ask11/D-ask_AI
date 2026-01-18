@@ -14,8 +14,8 @@ from typing import List, Dict, Any, Optional
 
 # 설정 및 초기화
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "..", "data")
-DB_DIR = os.path.join(BASE_DIR, "..", "chroma.db")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+DB_DIR = os.path.join(BASE_DIR, "chroma.db")
 COLLECTION_NAME = "my_rag_collection"
 
 # 임베딩 모델 (global scope 유지)
@@ -25,10 +25,13 @@ embedding_model = HuggingFaceEmbeddings(
     encode_kwargs={"normalize_embeddings": True},
 )
 
-# LLM (global scope 유지)
-llm = ChatOllama(model="qwen2.5:1.5b", temperature=0.1)
+llm = ChatOllama(
+    model="qwen2.5:1.5b", 
+    temperature=0.1,
+    # Docker에서 호스트 PC의 Ollama에 접속할 때 사용하는 특수 주소
+    base_url="http://host.docker.internal:11434"
+)
 
-# [핵심] JSON 데이터 메모리 캐싱 (global scope 유지)
 CACHED_MEAL_DATA: Dict[str, Dict[str, str]] = {}
 CACHED_TIMETABLE_DATA: Dict[str, Dict[str, str]] = {}
 
@@ -56,7 +59,7 @@ def init_cached_data():
     """서버 시작 시 급식/시간표 JSON을 메모리에 로드하여 조회용 딕셔너리 구성"""
     global CACHED_MEAL_DATA, CACHED_TIMETABLE_DATA
     
-    # 1. 급식 데이터 로드
+    # 급식 데이터 로드
     meal_path = os.path.join(DATA_DIR, "school_meal.json")
     if os.path.exists(meal_path):
         try:
@@ -78,7 +81,7 @@ def init_cached_data():
         except Exception as e:
             print(f"급식 데이터 로드 오류: {e}")
 
-    # 2. 시간표 데이터 로드
+    # 시간표 데이터 로드
     time_path = os.path.join(DATA_DIR, "comcigan.json")
     if os.path.exists(time_path):
         try:
@@ -146,12 +149,12 @@ def load_all_documents():
     """기존 JSON 데이터와 새로운 PDF 데이터를 모두 로드"""
     docs = []
     
-    # 1. 기존 JSON 공지사항 로드
+    # 기존 JSON 공지사항 로드
     crawling_path = os.path.join(DATA_DIR, "crawling.json")
     if os.path.exists(crawling_path):
         docs.extend(load_crawling_json(crawling_path))
     
-    # 2. 추가된 PDF 문서 로드 (인증제, 기숙사 규정 등)
+    # 추가된 PDF 문서 로드 (인증제, 기숙사 규정 등)
     docs.extend(load_pdf_documents(DATA_DIR))
     
     print(f"총 {len(docs)}개 Document 생성 완료 (JSON + PDF)")
@@ -211,7 +214,7 @@ def extract_date_from_question(question: str) -> Optional[str]:
     day_map = {"월요일": 0, "화요일": 1, "수요일": 2, "목요일": 3, "금요일": 4, 
                "토요일": 5, "일요일": 6, "월": 0, "화": 1, "수": 2, "목": 3, "금": 4}
     
-    # 1. 요일 처리 
+    # 요일 처리 
     for day_name, day_index in day_map.items():
         if day_name in question:
             current_day_index = today.weekday()
@@ -219,19 +222,19 @@ def extract_date_from_question(question: str) -> Optional[str]:
             target_date = today + datetime.timedelta(days=days_until_target)
             return target_date.strftime("%Y-%m-%d")
 
-    # 2. 오늘/내일 처리
+    # 오늘, 내일 처리
     if "오늘" in question:
         return today.strftime("%Y-%m-%d")
     if "내일" in question:
         return (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     
-    # 3. 구체적인 날짜 (YYYY년 MM월 DD일)
+    # 구체적인 날짜 (YYYY년 MM월 DD일)
     full_date_match = re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일", question)
     if full_date_match:
         y, m, d = full_date_match.groups()
         return f"{y}-{int(m):02d}-{int(d):02d}"
     
-    # 4. 연도 없는 날짜 (MM월 DD일)
+    # 연도 없는 날짜 (MM월 DD일)
     partial_date_match = re.search(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일", question)
     if partial_date_match:
         m, d = partial_date_match.groups()
@@ -310,9 +313,7 @@ def handle_timetable(question: str) -> str:
 
     return f"## {target_date} {grade}학년 {cls}반 시간표 ##\n{timetable_text}"
 
-# -------------------------
 # 프롬프트 템플릿 (general 질문용)
-# -------------------------
 template = """
 당신은 대덕소프트웨어마이스터 고등학교 정보 도우미입니다.
 아래 [문맥 정보]를 바탕으로 사용자 [질문]에 한국어로 정확히 답변하세요.
@@ -377,7 +378,7 @@ def rag_inference(question: str) -> str:
                 print("!! RAG 검색 결과 없음 (유사도 부족) !!")
                 return "현재 DB에는 해당 기술 정보가 없습니다."
 
-            # --- [디버깅 출력: 필터링된 실제 문맥 정보] ---
+            # 디버깅 출력: 필터링된 실제 문맥 정보
             context_text = docs_to_text(docs)
             print("\n--- RAG 검색 결과 (Context) ---")
             print(context_text)

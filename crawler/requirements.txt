@@ -1,2 +1,3 @@
 pycomcigan==1.4.0
 bs4==0.0.2
+python-dotenv==1.2.1
