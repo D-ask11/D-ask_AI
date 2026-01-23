@@ -1,0 +1,37 @@
+services:
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    entrypoint: [ "/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:1.5b && wait" ]
+    volumes:
+      - ollama_data:/root/.ollama
+
+  ai:
+    build: ./ai
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - ollama
+
+  backend:
+    build: ./backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+  crawler:
+    build: ./crawler
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      
+volumes:
+  ollama_data:

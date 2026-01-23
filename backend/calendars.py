@@ -14,19 +14,34 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-# GET으로 변경, 쿼리 파라미터 사용
+# # GET으로 변경, 쿼리 파라미터 사용
 @app.get("/calendar", response_model=list[CalendarItem])
 def get_calendar(year: int, month: int):
-    target_prefix = f"{year}-{month:02d}"
+    target_prefix_hyphen = f"{year}-{month:02d}" 
+    target_prefix_clean = f"{year}{month:02d}"  
+    
+    DATA_PATH = "/app/data/school_schedules.json"
 
-    DATA_PATH = "./data/school_schedules.json"
+    if not os.path.exists(DATA_PATH):
+        return []
 
-    with open(DATA_PATH, "r", encoding="utf-8") as f:
-        json_data = json.load(f)
+    try:
+        with open(DATA_PATH, "r", encoding="utf-8") as f:
+            json_data = json.load(f)
 
-    result = []
-    for item in json_data:
-        if item["date"].startswith(target_prefix):
-            result.append(item)
+        result = []
+        for item in json_data:
+            raw_date = item.get("date", "").strip()
+            
+            if raw_date.startswith(target_prefix_hyphen) or raw_date.startswith(target_prefix_clean):
+                
+                clean_date_8bit = raw_date.replace("-", "")
+                
+                if len(clean_date_8bit) == 8:
+                    item["date"] = clean_date_8bit
+                    result.append(item)
 
-    return result
+        return result
+
+    except Exception:
+        return []
