@@ -20,7 +20,7 @@ D-ask는 학교 홈페이지 등 여러 곳에 파편화되어 있는 학교 관
 
 ---
 
-## 🛠 주요 기술 및 기능 (AI & Backend)
+## 주요 기술 및 기능 (AI & Backend)
 
 ### 1. RAG (Retrieval-Augmented Generation) 기반 Q&A
 * 사용자의 질문이 들어오면 `ChromaDB`에서 관련 문서 조각을 검색합니다.
