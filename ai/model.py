@@ -29,7 +29,7 @@ llm = ChatOllama(
     model="qwen2.5:1.5b", 
     temperature=0.1,
     # Docker에서 호스트 PC의 Ollama에 접속할 때 사용하는 특수 주소
-    base_url="http://host.docker.internal:11434"
+    base_url="http://ollama:11434"
 )
 
 CACHED_MEAL_DATA: Dict[str, Dict[str, str]] = {}
