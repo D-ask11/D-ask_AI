@@ -1,13 +1,34 @@
+# FROM python:3.10-slim
+
+# WORKDIR /app
+
+# COPY requirements.txt .
+
+# RUN pip install --no-cache-dir -r requirements.txt
+
+# COPY . .
+
+# EXPOSE 8000
+
+# CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+
 FROM python:3.10-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# 1. 경로 수정: 프로젝트 루트 기준에서 ai 폴더 안의 파일을 지칭
+COPY ai/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 2. 소스 전체 복사 (루트의 .dockerignore가 불필요한 파일을 걸러줍니다)
 COPY . .
+
+# 3. 환경 변수 추가: /app 폴더를 파이썬 패키지 경로로 인식하게 함
+ENV PYTHONPATH=/app
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 4. 실행 경로 수정: ai 폴더 안의 main.py 내 app 객체 실행
+CMD ["uvicorn", "ai.main:app", "--host", "0.0.0.0", "--port", "8000"]

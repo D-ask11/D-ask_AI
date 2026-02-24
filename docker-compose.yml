@@ -8,14 +8,29 @@ services:
       - ollama_data:/root/.ollama
     command: serve
 
+  # ai:
+  #   build: ./ai
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./data:/app/data
+  #   environment:
+  #     - OLLAMA_HOST=http://ollama:11434
+  #   depends_on:
+  #     - ollama
   ai:
-    build: ./ai
+    # 핵심 변경: ai 폴더 안이 아니라 프로젝트 루트(.)에서 빌드해야 ai 패키지를 인식함
+    build: 
+      context: .
+      dockerfile: ./ai/Dockerfile
     ports:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      - ./ai:/app/ai  # 코드 수정 시 바로 반영되도록 볼륨 연결
     environment:
-      - OLLAMA_HOST=http://ollama:11434
+      - PYTHONPATH=/app
+      - OLLAMA_URL=http://ollama:11434  # 코드에서 사용하는 변수명과 일치시킴
     depends_on:
       - ollama
 
