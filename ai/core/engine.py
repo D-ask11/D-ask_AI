@@ -1,7 +1,9 @@
 import sys
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
-# 1. 경로 설정: 프로젝트 루트를 sys.path에 추가 (임포트 에러 방지)
+# 프로젝트 루트를 sys.path에 추가 (임포트 에러 방지)
 current_file_path = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_file_path))
 if project_root not in sys.path:
@@ -12,7 +14,7 @@ import re
 from typing import Dict, Any
 
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
@@ -26,21 +28,23 @@ class Dask_AI:
     def __init__(self):
         self.settings = Settings()
         
-        # 1. 유틸리티 및 로더 초기화
+        # 유틸리티 및 로더 초기화
         self.loader = DocumentLoader(self.settings)
         
-        # 2. AI 모델 설정
+        # AI 모델 설정
         self.embeddings = HuggingFaceEmbeddings(
-            model_name=self.settings.EMBED_MODEL,
-            model_kwargs={"device": "cpu"}
-        )
-        self.llm = ChatOllama(
+                    model_name=self.settings.EMBED_MODEL,
+                    model_kwargs={"device": "cpu"}
+                )
+        api_key = os.getenv("GOOGLE_API_KEY")
+        self.llm = ChatGoogleGenerativeAI(
             model=self.settings.LLM_MODEL,
+            google_api_key=api_key,
             temperature=0.1,
-            base_url=self.settings.OLLAMA_URL
+            convert_system_message_to_human=True # LangChain 버전 이슈 방지용 추가
         )
         
-        # 3. 데이터 캐시 및 VectorDB
+        # 데이터 캐시 및 VectorDB
         self.meal_cache = {}
         self.timetable_cache = {}
         self.vector_db = None
@@ -101,11 +105,11 @@ class Dask_AI:
                                 
                                 lines = []
                                 for p_name, info in periods.items():
-                                    # 1. 일반 과목 확인
+                                    # 일반 과목 확인
                                     subj = info.get("과목")
                                     teacher = info.get("선생님")
                                     
-                                    # 2. 만약 비어있다면 '원래 과목' 안에서 찾기
+                                    # 만약 비어있다면 '원래 과목' 안에서 찾기
                                     if not subj and "원래 과목" in info:
                                         orig = info["원래 과목"].get(p_name, {})
                                         subj = orig.get("과목")
@@ -124,7 +128,7 @@ class Dask_AI:
         q_type = QuestionParser.get_query_type(question)
         date = extract_date(question)
 
-        # 1. 급식 질문 처리 (필터링 로직 추가)
+        # 급식 질문 처리 (필터링 로직 추가)
         if q_type == "meal":
             meals = self.meal_cache.get(date, {})
             if not meals: return f"{date} 급식 정보가 없습니다."
@@ -139,7 +143,7 @@ class Dask_AI:
                 return f"### {date} {target_time} 정보 ###\n{meals[target_time]}"
             
             # 특정 끼니 언급 없으면 전체 출력
-            return f"### {date} 급식 정보 ###\n" + "\n".join(meals.values())
+            return f"{date} 급식 정보 \n" + "\n".join(meals.values())
 
         # 2. 시간표 질문 처리 (에러 방지 및 로직 개선)
         if q_type == "timetable":
@@ -149,7 +153,7 @@ class Dask_AI:
             res = self.timetable_cache.get(f"{g}-{c}", {}).get(date)
             # 데이터가 비어있는지(교시 내용이 없는지) 체크
             if res and "(" in res and res.count("()") < 3: # 내용이 어느정도 있는 경우
-                 return f"### {g}-{c} 시간표 ({date}) ###\n{res}"
+                 return f"{g}-{c} 시간표 ({date}) \n{res}"
             else:
                  return f"{g}학년 {c}반의 {date} 시간표 정보를 찾을 수 없거나 아직 업데이트되지 않았습니다."
 
@@ -167,7 +171,7 @@ class Dask_AI:
             return "학교 관련 정보에서 답변을 찾을 수 없습니다."
         
         context = "\n".join([d.page_content for d in docs])
-        template = "당신은 학교 도우미입니다. 아래 문맥을 사용하여 질문에 답하세요.\n\n문맥:\n{context}\n\n질문: {question}\n\n답변:"
+        template = "당신은 학교 도우미 D-ASK입니다. 아래 문맥을 사용하여 질문에 답하세요.\n\n문맥:\n{context}\n\n질문: {question}\n\n답변: 단, 마크 다운 문법을 사용하지말고 답변하세요. 또한, pdf가 있을 경우 pdf 링크를 마지막에 출력해 주세요."
         
         prompt = PromptTemplate.from_template(template)
         chain = prompt | self.llm | StrOutputParser()
