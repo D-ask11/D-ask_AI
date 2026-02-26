@@ -1,25 +1,5 @@
 services:
-  ollama:
-    image: ollama/ollama
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    command: serve
-
-  # ai:
-  #   build: ./ai
-  #   ports:
-  #     - "8000:8000"
-  #   volumes:
-  #     - ./data:/app/data
-  #   environment:
-  #     - OLLAMA_HOST=http://ollama:11434
-  #   depends_on:
-  #     - ollama
   ai:
-    # 핵심 변경: ai 폴더 안이 아니라 프로젝트 루트(.)에서 빌드해야 ai 패키지를 인식함
     build: 
       context: .
       dockerfile: ./ai/Dockerfile
@@ -27,12 +7,12 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
-      - ./ai:/app/ai  # 코드 수정 시 바로 반영되도록 볼륨 연결
+      - ./ai:/app/ai
+    env_file:
+      - .env
     environment:
       - PYTHONPATH=/app
-      - OLLAMA_URL=http://ollama:11434  # 코드에서 사용하는 변수명과 일치시킴
-    depends_on:
-      - ollama
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
   backend:
     build: ./backend
@@ -40,6 +20,7 @@ services:
       - "8001:8001"
     volumes:
       - ./data:/app/data
+
   crawler:
     build: ./crawler
     restart: unless-stopped
@@ -47,6 +28,3 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-      
-volumes:
-  ollama_data:

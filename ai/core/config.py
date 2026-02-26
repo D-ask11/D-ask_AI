@@ -1,5 +1,11 @@
 # 설정 관리
 import os
+from dotenv import load_dotenv
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(current_dir, "..", "..", ".env")
+load_dotenv(dotenv_path=env_path)
+
 
 class Settings:
     # 프로젝트 루트 경로 계산
@@ -14,6 +20,5 @@ class Settings:
     
     # 모델 설정
     EMBED_MODEL = "intfloat/multilingual-e5-small"
-    LLM_MODEL = "qwen2.5:1.5b"
-    OLLAMA_URL = "http://ollama:11434"
+    LLM_MODEL = "models/gemini-2.5-flash"
     SIMILARITY_THRESHOLD = 0.25
