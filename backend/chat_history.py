@@ -44,7 +44,6 @@ def add_message(chat_id: str, req: MessageRequest):
 
     messages[chat_id].append(user_message)
 
-    # 제목 자동 생성 (첫 메시지 기준)
     if chats[chat_id]["title"] == "새 채팅":
         first_message=req.content.strip()
         first_sentence = first_message.split(" ")[0]
@@ -52,7 +51,6 @@ def add_message(chat_id: str, req: MessageRequest):
         title_words=words[:6] if len(words)>=6 else words
         chats[chat_id]["title"] = "".join(title_words)
 
-    # AI 응답 (임시)
     ai_message = {
         "role": "assistant",
         "content": "AI 응답 예시"
