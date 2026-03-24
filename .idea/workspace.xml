@@ -6,8 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="d7d2b747-d33a-4364-9e51-1f3c72c9e716" name="변경" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/automation.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/automation.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/calendars.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/calendars.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -53,6 +51,7 @@
   &quot;keyToString&quot;: {
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
     &quot;Python.calendars.executor&quot;: &quot;Run&quot;,
+    &quot;Python.chat_history.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;dev&quot;,
@@ -74,16 +73,19 @@
       <option name="presentableId" value="Default" />
       <updated>1766486867466</updated>
     </task>
+    <task id="LOCAL-00001" summary="Add chat history code">
+      <option name="closed" value="true" />
+      <created>1773064224658</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1773064224658</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/backend/chat_history.py</url>
-          <option name="timeStamp" value="2" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Add chat history code" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add chat history code" />
   </component>
 </project>
