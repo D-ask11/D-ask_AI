@@ -1,20 +1,33 @@
 import uuid
 import logging
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from google import genai
 
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
+
+
+api_key = os.getenv("API_KEY")
+
+if not api_key:
+    raise ValueError("API_KEY 없음 (.env 확인해라)")
+
+client = genai.Client(api_key=api_key)
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY = "AIzaSyCS6Q9S-PRTIs_-QUq0lBXZCYQUIJZTbAM"
-client = genai.Client(api_key=GEMINI_API_KEY)
 
 router = APIRouter()
 chats = {}
 messages = {}
 
-MAX_HISTORY = 20  # 최대 히스토리 개수
+MAX_HISTORY = 20
 
 
 class MessageRequest(BaseModel):
@@ -25,7 +38,10 @@ def build_gemini_contents(chat_messages: list) -> list:
     contents = []
     for msg in chat_messages:
         role = "user" if msg["role"] == "user" else "model"
-        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+        contents.append({
+            "role": role,
+            "parts": [{"text": msg["content"]}]
+        })
     return contents
 
 
@@ -33,21 +49,23 @@ def generate_ai_title(chat_id: str, content: str):
     prompt = f"""
     다음 문장을 기반으로 채팅 제목을 만들어라.
     조건:
-    - 반드시 '명사형 제목'으로 작성
-    - 질문 형태 금지
+    - 반드시 명사형
+    - 질문 금지
     - 2~4단어
-    - 핵심 키워드만 사용
     문장: {content}
     """
     try:
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
         if response and response.text:
             title = response.text.strip().replace("\n", "")
             chats[chat_id]["title"] = title
-            logger.info(f"[{chat_id}] 제목 생성 완료: {title}")
+            logger.info(f"[{chat_id}] 제목 생성: {title}")
     except Exception as e:
         logger.error(f"[{chat_id}] 제목 생성 실패: {e}")
-        chats[chat_id]["title"] = content.strip()[:20]
+        chats[chat_id]["title"] = content[:20]
 
 
 @router.post("/chats")
@@ -82,13 +100,20 @@ def add_message(chat_id: str, req: MessageRequest, background_tasks: BackgroundT
         background_tasks.add_task(generate_ai_title, chat_id, req.content)
 
     contents = build_gemini_contents(messages[chat_id][-MAX_HISTORY:])
-    response = client.models.generate_content(model="gemini-2.5-flash", contents=contents)
 
-    ai_message = {
-        "role": "assistant",
-        "content": response.text.strip() if response and response.text else "응답 생성 실패"
-    }
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=contents
+        )
+        ai_text = response.text.strip() if response and response.text else "응답 생성 실패"
+    except Exception as e:
+        logger.error(f"[{chat_id}] 응답 생성 실패: {e}")
+        ai_text = "에러 발생"
+
+    ai_message = {"role": "assistant", "content": ai_text}
     messages[chat_id].append(ai_message)
+
     return {"chat_id": chat_id, "messages": [user_message, ai_message]}
 
 
@@ -96,6 +121,7 @@ def add_message(chat_id: str, req: MessageRequest, background_tasks: BackgroundT
 def delete_chat(chat_id: str):
     if chat_id not in chats:
         raise HTTPException(status_code=404, detail="존재하지 않는 채팅방")
+
     chats.pop(chat_id)
     messages.pop(chat_id)
     return {"result": "삭제 완료"}
