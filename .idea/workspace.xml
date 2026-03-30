@@ -5,6 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="d7d2b747-d33a-4364-9e51-1f3c72c9e716" name="변경" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/chat_history.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/chat_history.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -52,6 +53,7 @@
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "Python.calendars.executor": "Run",
     "Python.chat_history.executor": "Run",
+    "Python.database.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "history/dev2",

@@ -1,15 +1,19 @@
-import uuid
 import logging
+from fastapi import FastAPI, APIRouter, BackgroundTasks, HTTPException, Depends
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from google import genai
+from database import get_db, Base, engine
+from model import Chat, Message
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel
-from google import genai
 
+Base.metadata.create_all(bind=engine)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
+load_dotenv()
 
 api_key = os.getenv("API_KEY")
 
@@ -18,15 +22,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
-
-
 router = APIRouter()
-chats = {}
-messages = {}
-
 MAX_HISTORY = 20
 
 
@@ -38,10 +34,7 @@ def build_gemini_contents(chat_messages: list) -> list:
     contents = []
     for msg in chat_messages:
         role = "user" if msg["role"] == "user" else "model"
-        contents.append({
-            "role": role,
-            "parts": [{"text": msg["content"]}]
-        })
+        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
     return contents
 
 
@@ -49,81 +42,89 @@ def generate_ai_title(chat_id: str, content: str):
     prompt = f"""
     다음 문장을 기반으로 채팅 제목을 만들어라.
     조건:
-    - 반드시 명사형
-    - 질문 금지
+    - 다음은 문장을 기반으로 한 채팅 제목들입니다. 이런거 넣지말고 내용과 관련된 제목만 넣어라
+    - 반드시 '명사형 제목'으로 작성
+    - 질문 형태 금지
     - 2~4단어
+    - 핵심 키워드만 사용
     문장: {content}
     """
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+        db = next(get_db())
+        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         if response and response.text:
             title = response.text.strip().replace("\n", "")
-            chats[chat_id]["title"] = title
-            logger.info(f"[{chat_id}] 제목 생성: {title}")
+            chat = db.query(Chat).filter(Chat.id == chat_id).first()
+            if chat:
+                chat.title = title
+                db.commit()
+                logger.info(f"[{chat_id}] 제목 생성 완료: {title}")
     except Exception as e:
         logger.error(f"[{chat_id}] 제목 생성 실패: {e}")
-        chats[chat_id]["title"] = content[:20]
 
 
 @router.post("/chats")
-def create_chats():
-    chat_id = str(uuid.uuid4())
-    chats[chat_id] = {"id": chat_id, "title": "새 채팅"}
-    messages[chat_id] = []
-    return {"chat_id": chat_id}
+def create_chats(db: Session = Depends(get_db)):
+    chat = Chat()
+    db.add(chat)
+    db.commit()
+    db.refresh(chat)
+    return {"chat_id": chat.id}
 
 
 @router.get("/chats")
-def get_chats():
-    return list(chats.values())
+def get_chats(db: Session = Depends(get_db)):
+    return db.query(Chat).all()
 
 
 @router.get("/chats/{chat_id}")
-def get_chat_messages(chat_id: str):
-    if chat_id not in chats:
+def get_chat_messages(chat_id: str, db: Session = Depends(get_db)):
+    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+    if not chat:
         raise HTTPException(status_code=404, detail="존재하지 않는 채팅방")
-    return messages.get(chat_id, [])
+    return db.query(Message).filter(Message.chat_id == chat_id).all()
 
 
 @router.post("/chats/{chat_id}/messages")
-def add_message(chat_id: str, req: MessageRequest, background_tasks: BackgroundTasks):
-    if chat_id not in chats:
+def add_message(chat_id: str, req: MessageRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+    if not chat:
         raise HTTPException(status_code=404, detail="존재하지 않는 채팅방")
 
-    user_message = {"role": "user", "content": req.content}
-    messages[chat_id].append(user_message)
+    user_msg = Message(chat_id=chat_id, role="user", content=req.content)
+    db.add(user_msg)
+    db.commit()
 
-    if chats[chat_id]["title"] == "새 채팅":
+    if chat.title == "새 채팅":
         background_tasks.add_task(generate_ai_title, chat_id, req.content)
 
-    contents = build_gemini_contents(messages[chat_id][-MAX_HISTORY:])
+    prev_messages = db.query(Message).filter(Message.chat_id == chat_id).all()
+    contents = build_gemini_contents([{"role": m.role, "content": m.content} for m in prev_messages])
+    contents = contents[-MAX_HISTORY:]
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=contents
-        )
-        ai_text = response.text.strip() if response and response.text else "응답 생성 실패"
-    except Exception as e:
-        logger.error(f"[{chat_id}] 응답 생성 실패: {e}")
-        ai_text = "에러 발생"
+    response = client.models.generate_content(model="gemini-2.5-flash", contents=contents)
 
-    ai_message = {"role": "assistant", "content": ai_text}
-    messages[chat_id].append(ai_message)
+    ai_msg = Message(chat_id=chat_id, role="assistant", content=response.text.strip())
+    db.add(ai_msg)
+    db.commit()
 
-    return {"chat_id": chat_id, "messages": [user_message, ai_message]}
+    return {
+        "chat_id": chat_id,
+        "messages": [
+            {"role": user_msg.role, "content": user_msg.content},
+            {"role": ai_msg.role, "content": ai_msg.content}
+        ]
+    }
 
 
 @router.delete("/chats/{chat_id}")
-def delete_chat(chat_id: str):
-    if chat_id not in chats:
+def delete_chat(chat_id: str, db: Session = Depends(get_db)):
+    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+    if not chat:
         raise HTTPException(status_code=404, detail="존재하지 않는 채팅방")
-
-    chats.pop(chat_id)
-    messages.pop(chat_id)
+    db.query(Message).filter(Message.chat_id == chat_id).delete()
+    db.delete(chat)
+    db.commit()
     return {"result": "삭제 완료"}
 
 
