@@ -6,3 +6,4 @@ chroma.db/
 data/
 .idea/
 ./test/
+./backend/test.db
