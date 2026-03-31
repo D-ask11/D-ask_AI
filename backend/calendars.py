@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from models import CalendarItem
+from .models import CalendarItem
 import json
 
 app = FastAPI()
