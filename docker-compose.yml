@@ -1,0 +1,30 @@
+services:
+  ai:
+    build: 
+      context: .
+      dockerfile: ./ai/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./ai:/app/ai
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+
+  backend:
+    build: ./backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+
+  crawler:
+    build: ./crawler
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

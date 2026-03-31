@@ -2,8 +2,7 @@
 .venv/
 **/__pycache__/
 .env
-ai/chroma_db
-data/
+chroma.db/
 .idea/
-./test/
-./backend/test.db
+
+
