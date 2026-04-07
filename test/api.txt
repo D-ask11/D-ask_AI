@@ -1,51 +1,10 @@
 endpoint api/auth/login, post 메서드
 
-## request
-
-| **field** | **type** | **description** |
-| --- | --- | --- |
-| social_kind | string | 사용자id |
-
-```json
-
-	{
-		"social_kind": "google",
-	}
-```
-
-# response
-
-## 200 OK
-
-| **field** | **type** | **description** |
-| --- | --- | --- |
-| id | string | 사용자id |
-
-```json
-
-	{
-		"id": "123456.....",
-	}
-```
-
-- 로그인 후, 사용자 이메일이 DB에 존재하지 않으면 회원가입 API도 호출, id엔 아무 값도 없음
-
-endpoint api/auth/register, post 메서드
 # request
 
-## body
-
-| **field** | **type** | **description** |
+| 요청 파라미터(query parameter) | type | **description** |
 | --- | --- | --- |
-| UserID | string | 사용자 ID |
-
-body example)
-
-```json
-{
-	"UserID":"testUser"
-}
-```
+| provider | string | 사용자가 뭐로 로그인 했는지, google or kakao or naver |
 
 # response
 
@@ -61,9 +20,3 @@ body example)
 		"id": "123456.....",
 	}
 ```
-
-## 200 OK
-
-## 500 International Server Error
-
-- 서버 에러, 백엔드에게 문의하세요

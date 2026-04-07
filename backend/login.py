@@ -98,14 +98,9 @@ def get_all_users(db: Session = Depends(get_db)):
     ]
 
 
-class LoginRequest(BaseModel):
-    social_kind: str  # google, naver, kakao
-
-
 @router.get("/api/auth/login")
-# def api_auth_login(payload: LoginRequest):
-def api_auth_login(payload: str = Query(...)):
-    social_kind = payload.lower()
+def api_auth_login(provider: str = Query(...)):
+    social_kind = provider.lower()
     state = str(uuid.uuid4())
 
     if social_kind == "google":
