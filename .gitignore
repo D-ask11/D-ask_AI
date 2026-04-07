@@ -5,5 +5,5 @@
 ai/chroma_db
 data/
 .idea/
-./test/
-./backend/test.db
+test/
+backend/test.db
