@@ -84,16 +84,38 @@ def make_json():
          info={'date':'AA_YMD', 'title':'EVENT_NM'},
          file='./data/school_schedules.json'
          )
+    
+    print('전처리')
+    with open('./data/school_schedules.json', 'r', encoding='utf-8') as f:
+        file=json.load(f)
+        for i in file:
+            date = datetime.datetime.strptime(i['date'], '%Y%m%d')
+            i['date'] = date.strftime('%Y-%m-%d')
+
+    with open('./data/school_schedules.json', 'w', encoding='utf-8') as f:
+        json.dump(file, f, ensure_ascii=False, indent=2)
+        
+    print('끄읕')
+    
+    with open('./data/last_crawling_time.txt', 'r', encoding='utf-8') as f:
+        last = datetime.datetime.strptime(f.read(), '%Y%m%d')
+    if int(datetime.datetime.now().strftime('%m')) == int(last.strftime('%m')):
+        return
+    with open('./data/last_crawling_time.txt', 'w', encoding='utf-8') as f:
+        f.write(datetime.datetime.now().strftime('%Y%m%d'))
     main(key=api_key, base_url="https://open.neis.go.kr/hub/mealServiceDietInfo", 
          info={'날짜':'MLSV_YMD','시간':'MMEAL_SC_NM', '요리명':'DDISH_NM', '칼로리':'CAL_INFO'},
-         file='./data/school_meal.json'
+         file='./data/backup_school_meal.json'
          )
     print('전처리')
-    with open('./data/school_meal.json', 'r', encoding='utf-8') as f:
+    with open('./data/backup_school_meal.json', 'r', encoding='utf-8') as f:
         file=json.load(f)
         patt=re.compile(r'([^\.\ ]+)[\.\ ]')
         exclude=re.compile(r'[\d\(]+')
+        ans=[]
         for i in file:
+            if i['날짜'][:6] != datetime.datetime.now().strftime('%Y%m'):
+                continue
             li=[]
             for j in i['요리명'].split('<br/>'):
                 matt=patt.findall(j)
@@ -111,20 +133,12 @@ def make_json():
                     
                     li.append(mli[:l+1])
             i['요리명']=li
-
+            ans.append(i)            
     with open('./data/school_meal.json', 'w', encoding='utf-8') as f:
-        json.dump(file, f, ensure_ascii=False, indent=2)
+        json.dump(ans, f, ensure_ascii=False, indent=2)
         
     print('끄읕')
 
-    print('전처리')
-    with open('./data/school_schedules.json', 'r', encoding='utf-8') as f:
-        file=json.load(f)
-        for i in file:
-            date = datetime.datetime.strptime(i['date'], '%Y%m%d')
-            i['date'] = date.strftime('%Y-%m-%d')
+    
 
-    with open('./data/school_schedules.json', 'w', encoding='utf-8') as f:
-        json.dump(file, f, ensure_ascii=False, indent=2)
-        
-    print('끄읕')
+make_json()

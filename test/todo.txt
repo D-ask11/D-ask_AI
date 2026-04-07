@@ -1,0 +1,13 @@
+requirements.txt
+    python-multipart
+    pyjwt
+    jwt
+    pwdlib[argon2]
+    jose
+
+id uuid 아님!
+GET method로, httpOnly에 token
+성환이 API에 token 검사 logic
+프로필 사진??
+카카오, naver하기
+DB 문제
