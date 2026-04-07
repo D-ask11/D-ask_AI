@@ -98,7 +98,7 @@ def get_all_users(db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/api/auth/login")
+@router.post("/api/auth/login")
 def api_auth_login(provider: str = Query(...)):
     social_kind = provider.lower()
     state = str(uuid.uuid4())
