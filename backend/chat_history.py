@@ -1,14 +1,14 @@
 import logging
-from fastapi import FastAPI, APIRouter, BackgroundTasks, HTTPException, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from google import genai
-from database import get_db, Base, engine
-from model import Chat, Message
+from backend.database import get_db
+from backend.models import Chatroom, Message
+from backend.login import get_user_info
 import os
 from dotenv import load_dotenv
 
-Base.metadata.create_all(bind=engine)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -22,12 +22,14 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-router = APIRouter()
+router = APIRouter(prefix="/api/chat")
 MAX_HISTORY = 20
+DEFAULT_TITLE = "새 채팅"
 
 
-class MessageRequest(BaseModel):
-    content: str
+class UpdateChatRequest(BaseModel):
+    message: str
+    role: str
 
 
 def build_gemini_contents(chat_messages: list) -> list:
@@ -45,7 +47,7 @@ def generate_ai_title(chat_id: str, content: str):
     - 다음은 문장을 기반으로 한 채팅 제목들입니다. 이런거 넣지말고 내용과 관련된 제목만 넣어라
     - 반드시 '명사형 제목'으로 작성
     - 질문 형태 금지
-    - 2~4단어
+    - 50단어 이하로 작성, 10단어 이하 권장
     - 핵심 키워드만 사용
     문장: {content}
     """
@@ -54,7 +56,7 @@ def generate_ai_title(chat_id: str, content: str):
         response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         if response and response.text:
             title = response.text.strip().replace("\n", "")
-            chat = db.query(Chat).filter(Chat.id == chat_id).first()
+            chat = db.query(Chatroom).filter(Chatroom.id == chat_id).first()
             if chat:
                 chat.title = title
                 db.commit()
@@ -63,69 +65,95 @@ def generate_ai_title(chat_id: str, content: str):
         logger.error(f"[{chat_id}] 제목 생성 실패: {e}")
 
 
-@router.post("/chats")
-def create_chats(db: Session = Depends(get_db)):
-    chat = Chat()
+def authenticate_user(provider: str, authorization: str, db: Session):
+    user_info = get_user_info(provider, authorization, db=db)
+    return user_info
+
+
+@router.post("/create")
+def create_chats(
+    provider: str = Query(...),
+    authorization: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    user_info = authenticate_user(provider, authorization, db)
+    chat = Chatroom(title=DEFAULT_TITLE, id2=user_info["user_id"])
     db.add(chat)
     db.commit()
     db.refresh(chat)
-    return {"chat_id": chat.id}
+
+    return {"title": chat.title, "id": chat.id}
 
 
-@router.get("/chats")
-def get_chats(db: Session = Depends(get_db)):
-    return db.query(Chat).all()
+@router.get("/read_chat")
+def get_chats(
+    provider: str = Query(...),
+    authorization: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    user_info = authenticate_user(provider, authorization, db)
+    chats = db.query(Chatroom).filter(Chatroom.id2 == user_info["user_id"]).all()
+    return [{"title": c.title, "id": c.id} for c in chats]
 
 
-@router.get("/chats/{chat_id}")
-def get_chat_messages(chat_id: str, db: Session = Depends(get_db)):
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+@router.get("/read_message/{chat_id}")
+def get_chat_messages(
+    chat_id: str,
+    provider: str = Query(...),
+    authorization: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    user_info = authenticate_user(provider, authorization, db)
+    chat = db.query(Chatroom).filter(Chatroom.id == chat_id, Chatroom.id2 == user_info["user_id"]).first()
     if not chat:
         raise HTTPException(status_code=404, detail="존재하지 않는 채팅방")
-    return db.query(Message).filter(Message.chat_id == chat_id).all()
+    messages = db.query(Message).filter(Message.room_id == chat_id).order_by(Message.created_at).all()
+    return [{"message_id": m.id, "content": m.content} for m in messages]
 
 
-@router.post("/chats/{chat_id}/messages")
-def add_message(chat_id: str, req: MessageRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+@router.post("/update/{chat_id}")
+def update_chat(
+    chat_id: str,
+    payload: UpdateChatRequest,
+    provider: str = Query(...),
+    authorization: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    user_info = authenticate_user(provider, authorization, db)
+    chat = db.query(Chatroom).filter(Chatroom.id == chat_id, Chatroom.id2 == user_info["user_id"]).first()
     if not chat:
         raise HTTPException(status_code=404, detail="존재하지 않는 채팅방")
 
-    user_msg = Message(chat_id=chat_id, role="user", content=req.content)
-    db.add(user_msg)
+    msg = Message(room_id=chat_id, role=payload.role, content=payload.message)
+    db.add(msg)
     db.commit()
 
-    if chat.title == "새 채팅":
-        background_tasks.add_task(generate_ai_title, chat_id, req.content)
+    if chat.title == DEFAULT_TITLE:
+        messages = db.query(Message).filter(Message.room_id == chat_id).all()
+        user_count = len([m for m in messages if m.role == "user"])
+        assistant_count = len([m for m in messages if m.role == "assistant"])
+        if user_count == 1 and assistant_count == 1:
+            generate_ai_title(chat.id, payload.message)
+            db.refresh(chat)
 
-    prev_messages = db.query(Message).filter(Message.chat_id == chat_id).all()
-    contents = build_gemini_contents([{"role": m.role, "content": m.content} for m in prev_messages])
-    contents = contents[-MAX_HISTORY:]
-
-    response = client.models.generate_content(model="gemini-2.5-flash", contents=contents)
-
-    ai_msg = Message(chat_id=chat_id, role="assistant", content=response.text.strip())
-    db.add(ai_msg)
-    db.commit()
-
-    return {
-        "chat_id": chat_id,
-        "messages": [
-            {"role": user_msg.role, "content": user_msg.content},
-            {"role": ai_msg.role, "content": ai_msg.content}
-        ]
-    }
+    return {"title": chat.title}
 
 
-@router.delete("/chats/{chat_id}")
-def delete_chat(chat_id: str, db: Session = Depends(get_db)):
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+@router.delete("/delete/{chat_id}")
+def delete_chat(
+    chat_id: str,
+    provider: str = Query(...),
+    authorization: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    user_info = authenticate_user(provider, authorization, db)
+    chat = db.query(Chatroom).filter(Chatroom.id == chat_id, Chatroom.id2 == user_info["user_id"]).first()
     if not chat:
         raise HTTPException(status_code=404, detail="존재하지 않는 채팅방")
-    db.query(Message).filter(Message.chat_id == chat_id).delete()
+    db.query(Message).filter(Message.room_id == chat_id).delete()
     db.delete(chat)
     db.commit()
-    return {"result": "삭제 완료"}
+    return {}
 
 
 app = FastAPI()

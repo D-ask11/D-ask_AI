@@ -1,32 +1,48 @@
 import os
 import uuid
+import base64
 from urllib.parse import urlencode
 
 import dotenv
 import requests
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.models import SessionLocal, User, UserResponse
+from backend.models import User
+from backend.database import SessionLocal, get_db
 
 # .env 로드
 dotenv.load_dotenv()
 
+# Google OAuth 설정
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
-
-if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-    raise RuntimeError("GOOGLE_CLIENT_ID 및 GOOGLE_CLIENT_SECRET을 .env에 설정하세요")
-
 GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
 
+# Naver OAuth 설정
+NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
+NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
+NAVER_REDIRECT_URI = os.getenv("NAVER_REDIRECT_URI", "http://localhost:8000/auth/naver/callback")
+NAVER_AUTH_ENDPOINT = "https://nid.naver.com/oauth2.0/authorize"
+NAVER_TOKEN_ENDPOINT = "https://nid.naver.com/oauth2.0/token"
+NAVER_USERINFO_ENDPOINT = "https://openapi.naver.com/v1/nid/me"
+
+# Kakao OAuth 설정
+KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
+KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET")
+KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", "http://localhost:8000/auth/kakao/callback")
+KAKAO_AUTH_ENDPOINT = "https://kauth.kakao.com/oauth/authorize"
+KAKAO_TOKEN_ENDPOINT = "https://kauth.kakao.com/oauth/token"
+KAKAO_USERINFO_ENDPOINT = "https://kapi.kakao.com/v2/user/me"
+
 app = FastAPI()
+router = APIRouter()
 
 origins = [
     "http://localhost:3000",
@@ -52,83 +68,97 @@ def get_db():
         db.close()
 
 
-# 명세: api/auth/login
+def require_env(value: str | None, name: str):
+    if not value:
+        raise RuntimeError(f"{name}를 .env에 설정하세요")
+
+
+def get_or_create_user(db: Session, email: str, provider: str):
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(email=email, provider=provider)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    if user.provider != provider:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이메일이 이미 다른 provider로 등록됨")
+    return user
+
+
+@router.get("/api/auth/get_all_users")
+def get_all_users(db: Session = Depends(get_db)):
+    users = db.query(User).all()
+    return [
+        {
+            "id": user.id,
+            "email": user.email,
+            "provider": user.provider,
+        }
+        for user in users
+    ]
+
+
 class LoginRequest(BaseModel):
-    social_kind: str
-    email: str | None = None
+    social_kind: str  # google, naver, kakao
 
 
-@app.post("/api/auth/login")
-def api_auth_login(payload: LoginRequest, db: Session = Depends(get_db)):
-    if payload.social_kind != "google":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="지원하지 않는 social_kind")
-
-    # 이메일이 들어왔을 때 DB 확인
-    if payload.email:
-        user = db.query(User).filter(User.email == payload.email).first()
-        if user:
-            return {"id": user.id}
-        else:
-            # 없는 사용자라면 id 빈값
-            return {"id": None}
-
-    # 이메일이 없으면 프런트에서 구글 OAuth flow 시작용 URL 반환
+@router.get("/api/auth/login")
+# def api_auth_login(payload: LoginRequest):
+def api_auth_login(payload: str = Query(...)):
+    social_kind = payload.lower()
     state = str(uuid.uuid4())
-    q = {
-        "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "access_type": "offline",
-        "prompt": "consent",
-        "state": state,
-    }
-    login_url = f"{GOOGLE_AUTH_ENDPOINT}?{urlencode(q)}"
-    return {"login_url": login_url}
+
+    if social_kind == "google":
+        require_env(GOOGLE_CLIENT_ID, "GOOGLE_CLIENT_ID")
+        require_env(GOOGLE_CLIENT_SECRET, "GOOGLE_CLIENT_SECRET")
+        query = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "redirect_uri": GOOGLE_REDIRECT_URI,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": state,
+        }
+        url = f"{GOOGLE_AUTH_ENDPOINT}?{urlencode(query)}"
+        return RedirectResponse(url)
+
+    if social_kind == "naver":
+        require_env(NAVER_CLIENT_ID, "NAVER_CLIENT_ID")
+        require_env(NAVER_CLIENT_SECRET, "NAVER_CLIENT_SECRET")
+        query = {
+            "client_id": NAVER_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": NAVER_REDIRECT_URI,
+            "state": state,
+            "scope": "name,email",
+        }
+        url = f"{NAVER_AUTH_ENDPOINT}?{urlencode(query)}"
+        return RedirectResponse(url)
+
+    if social_kind == "kakao":
+        require_env(KAKAO_CLIENT_ID, "KAKAO_CLIENT_ID")
+        require_env(KAKAO_CLIENT_SECRET, "KAKAO_CLIENT_SECRET")
+        query = {
+            "client_id": KAKAO_CLIENT_ID,
+            "redirect_uri": KAKAO_REDIRECT_URI,
+            "response_type": "code",
+            "scope": "profile_nickname,account_email",
+            "state": state,
+        }
+        url = f"{KAKAO_AUTH_ENDPOINT}?{urlencode(query)}"
+        return RedirectResponse(url)
+
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="지원하지 않는 social_kind")
 
 
-# 명세: api/auth/register
-class RegisterRequest(BaseModel):
-    UserID: str
-    email: str
-
-
-@app.post("/api/auth/register")
-def api_auth_register(payload: RegisterRequest, db: Session = Depends(get_db)):
-    if not payload.UserID or not payload.email:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="UserID와 email을 입력하세요")
-
-    existing = db.query(User).filter(User.email == payload.email).first()
-    if existing:
-        return {"id": existing.id}
-
-    user = User(email=payload.email, provider="google")
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return {"id": user.id}
-
-
-@app.get("/login/google")
-def login_with_google():
-    state = str(uuid.uuid4())
-    query = {
-        "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "access_type": "offline",
-        "prompt": "consent",
-        "state": state,
-    }
-    url = f"{GOOGLE_AUTH_ENDPOINT}?{urlencode(query)}"
-    return RedirectResponse(url)
-
-
-@app.get("/auth/google/callback")
+@router.get("/auth/google/callback")
 def google_callback(code: str | None = None, state: str | None = None, db: Session = Depends(get_db)):
     if not code:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="code 누락")
+
+    require_env(GOOGLE_CLIENT_ID, "GOOGLE_CLIENT_ID")
+    require_env(GOOGLE_CLIENT_SECRET, "GOOGLE_CLIENT_SECRET")
 
     token_data = {
         "code": code,
@@ -153,6 +183,7 @@ def google_callback(code: str | None = None, state: str | None = None, db: Sessi
     if not access_token:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="access_token 없음")
 
+
     userinfo_resp = requests.get(
         GOOGLE_USERINFO_ENDPOINT,
         headers={"Authorization": f"Bearer {access_token}"},
@@ -164,35 +195,309 @@ def google_callback(code: str | None = None, state: str | None = None, db: Sessi
 
     userinfo = userinfo_resp.json()
     email = userinfo.get("email")
-    name = userinfo.get("name")
-
     if not email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google 이메일 없음")
 
-    user = db.query(User).filter(User.email == email).first()
-    is_new_user = False
-    if not user:
-        user = User(email=email, provider="google")
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        is_new_user = True
-
+    get_or_create_user(db, email, "google")
+    
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
-            "user": UserResponse(id=user.id, email=user.email, provider=user.provider).dict(),
-            "is_new_user": is_new_user,
-            "google_profile": {"name": name, "email": email},
+            "access_token": access_token,
+            "refresh_token": token_json.get("refresh_token"),
+            "provider": "google",
         },
     )
 
 
-@app.get("/api/users")
-def get_users(db: Session = Depends(get_db)):
-    users = db.query(User).all()
-    return {"users": [UserResponse(id=u.id, email=u.email, provider=u.provider).dict() for u in users]}
+@router.get("/auth/naver/callback")
+def naver_callback(code: str | None = None, state: str | None = None, db: Session = Depends(get_db)):
+    if not code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="code 누락")
 
+    require_env(NAVER_CLIENT_ID, "NAVER_CLIENT_ID")
+    require_env(NAVER_CLIENT_SECRET, "NAVER_CLIENT_SECRET")
+
+    token_data = {
+        "grant_type": "authorization_code",
+        "client_id": NAVER_CLIENT_ID,
+        "client_secret": NAVER_CLIENT_SECRET,
+        "code": code,
+        "state": state,
+    }
+
+    token_resp = requests.post(
+        NAVER_TOKEN_ENDPOINT,
+        data=token_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=10,
+    )
+
+    if token_resp.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Naver 토큰 교환 실패")
+
+    token_json = token_resp.json()
+    access_token = token_json.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="access_token 없음")
+
+
+    userinfo_resp = requests.get(
+        NAVER_USERINFO_ENDPOINT,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+
+    if userinfo_resp.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Naver 사용자 정보 조회 실패")
+
+    userinfo = userinfo_resp.json()
+    response = userinfo.get("response", {})
+    email = response.get("email")
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Naver 이메일 없음")
+
+    get_or_create_user(db, email, "naver")
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "access_token": access_token,
+            "refresh_token": token_json.get("refresh_token"),
+            "provider": "naver",
+        },
+    )
+
+
+@router.get("/auth/kakao/callback")
+def kakao_callback(code: str | None = None, state: str | None = None, db: Session = Depends(get_db)):
+    if not code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="code 누락")
+
+    require_env(KAKAO_CLIENT_ID, "KAKAO_CLIENT_ID")
+    require_env(KAKAO_CLIENT_SECRET, "KAKAO_CLIENT_SECRET")
+
+    token_data = {
+        "grant_type": "authorization_code",
+        "client_id": KAKAO_CLIENT_ID,
+        "client_secret": KAKAO_CLIENT_SECRET,
+        "redirect_uri": KAKAO_REDIRECT_URI,
+        "code": code,
+    }
+
+    token_resp = requests.post(
+        KAKAO_TOKEN_ENDPOINT,
+        data=token_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=10,
+    )
+
+    if token_resp.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Kakao 토큰 교환 실패")
+
+    token_json = token_resp.json()
+    access_token = token_json.get("access_token") 
+    if not access_token:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="access_token 없음")
+
+
+    userinfo_resp = requests.get(
+        KAKAO_USERINFO_ENDPOINT,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+
+    if userinfo_resp.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Kakao 사용자 정보 조회 실패")
+
+    userinfo = userinfo_resp.json()
+    kakao_account = userinfo.get("kakao_account", {})
+    email = kakao_account.get("email")
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Kakao 이메일 없음")
+
+    get_or_create_user(db, email, "kakao")
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "access_token": access_token,
+            "refresh_token": token_json.get("refresh_token"),
+            "provider": "kakao",
+        },
+    )
+
+
+@router.get("/api/auth/user")
+def get_user_info(provider: str = Query(...), authorization: str = Header(...), db: Session = Depends(get_db)):
+    supported = {"google", "naver", "kakao"}
+    provider = provider.lower()
+    if provider not in supported:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="지원하지 않는 provider")
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="잘못된 Authorization 헤더")
+
+    tokens = authorization[7:].split(",")
+    if len(tokens) != 2:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="토큰 형식이 잘못됨")
+
+    access_token, refresh_token = tokens
+
+    def parse_google_userinfo(token: str):
+        resp = requests.get(
+            GOOGLE_USERINFO_ENDPOINT,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        return data.get("email")
+
+    def refresh_google_tokens():
+        refresh_data = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        }
+        resp = requests.post(
+            GOOGLE_TOKEN_ENDPOINT,
+            data=refresh_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+
+    def parse_naver_userinfo(token: str):
+        resp = requests.get(
+            NAVER_USERINFO_ENDPOINT,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        return data.get("response", {}).get("email")
+
+    def refresh_naver_tokens():
+        refresh_data = {
+            "grant_type": "refresh_token",
+            "client_id": NAVER_CLIENT_ID,
+            "client_secret": NAVER_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+        }
+        resp = requests.post(
+            NAVER_TOKEN_ENDPOINT,
+            data=refresh_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+
+    def parse_kakao_userinfo(token: str):
+        resp = requests.get(
+            KAKAO_USERINFO_ENDPOINT,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.json().get("kakao_account", {}).get("email")
+
+    def refresh_kakao_tokens():
+        data = {
+            "grant_type": "refresh_token",
+            "client_id": KAKAO_CLIENT_ID,
+            "refresh_token": refresh_token,
+        }
+        if KAKAO_CLIENT_SECRET:
+            data["client_secret"] = KAKAO_CLIENT_SECRET
+        resp = requests.post(
+            KAKAO_TOKEN_ENDPOINT,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+
+    def make_user_response(email: str, access_token_value: str, refresh_token_value: str):
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다")
+        if user.provider != provider:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이메일이 이미 다른 provider로 등록됨")
+        return {
+            "user_id": user.id,
+            "email": email,
+            "provider": provider,
+            "access_token": access_token_value,
+            "refresh_token": refresh_token_value,
+        }
+
+    if provider == "google":
+        require_env(GOOGLE_CLIENT_ID, "GOOGLE_CLIENT_ID")
+        require_env(GOOGLE_CLIENT_SECRET, "GOOGLE_CLIENT_SECRET")
+        email = parse_google_userinfo(access_token)
+        if email:
+            return make_user_response(email, access_token, refresh_token)
+        new_tokens = refresh_google_tokens()
+        if not new_tokens:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="토큰 리프레시 실패")
+        new_access = new_tokens.get("access_token")
+        new_refresh = new_tokens.get("refresh_token") or refresh_token
+        if not new_access:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="새 access_token 없음")
+        email = parse_google_userinfo(new_access)
+        if not email:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Google 이메일 없음")
+        return make_user_response(email, new_access, new_refresh)
+
+    if provider == "naver":
+        require_env(NAVER_CLIENT_ID, "NAVER_CLIENT_ID")
+        require_env(NAVER_CLIENT_SECRET, "NAVER_CLIENT_SECRET")
+        email = parse_naver_userinfo(access_token)
+        if email:
+            return make_user_response(email, access_token, refresh_token)
+        new_tokens = refresh_naver_tokens()
+        if not new_tokens:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="토큰 리프레시 실패")
+        new_access = new_tokens.get("access_token")
+        new_refresh = new_tokens.get("refresh_token") or refresh_token
+        if not new_access:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="새 access_token 없음")
+        email = parse_naver_userinfo(new_access)
+        if not email:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Naver 이메일 없음")
+        return make_user_response(email, new_access, new_refresh)
+
+    if provider == "kakao":
+        require_env(KAKAO_CLIENT_ID, "KAKAO_CLIENT_ID")
+        require_env(KAKAO_CLIENT_SECRET, "KAKAO_CLIENT_SECRET")
+        email = parse_kakao_userinfo(access_token)
+        if email:
+            return make_user_response(email, access_token, refresh_token)
+        new_tokens = refresh_kakao_tokens()
+        if not new_tokens:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="토큰 리프레시 실패")
+        new_access = new_tokens.get("access_token")
+        new_refresh = new_tokens.get("refresh_token") or refresh_token
+        if not new_access:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="새 access_token 없음")
+        email = parse_kakao_userinfo(new_access)
+        if not email:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Kakao 이메일 없음")
+        return make_user_response(email, new_access, new_refresh)
+
+
+app.include_router(router)
 
 @app.get("/health")
 def health_check():

@@ -1,0 +1,194 @@
+api/chat/read_message
+# header
+
+```json
+{
+		"Authorization":"Bearer access_token, refresh_token"
+}
+```
+
+# request
+
+| 요청 파라미터(query parameter) | type | **description** |
+| --- | --- | --- |
+| provider | string | 사용자가 뭐로 로그인 했는지, google or kakao or naver |
+
+### path parameter
+
+| **field** | **type** | **description** |
+| --- | --- | --- |
+| id | string | 채팅방 ID |
+
+# response
+
+## 200 OK
+
+| **field** | **type** | **description** |
+| --- | --- | --- |
+| message_id | string | 메시지id |
+| content | string | 메시지 내용 |
+
+```json
+[
+	{
+		"message_id": "123456.....",
+		"content":"질문:오늘 급식 뭐야? 답:밥입니다."
+	},
+	{
+		"message_id": "76543....",
+		"content":"질문:오늘 시간표? 답:국어"
+	}
+]
+```
+
+api/chat/read_chat
+# header
+
+```json
+{
+		"Authorization":"Bearer access_token, refresh_token"
+}
+```
+
+# request
+
+| 요청 파라미터(query parameter) | type | **description** |
+| --- | --- | --- |
+| provider | string | 사용자가 뭐로 로그인 했는지, google or kakao or naver |
+
+# response
+
+## 200 OK
+
+| **field** | **type** | **description** |
+| --- | --- | --- |
+| title | string | 채팅방 제목 |
+| id | string | 채팅방 ID |
+
+```json
+[
+	{
+		"title": "급식 질문",
+		"id":"12345678....."
+	},
+	{
+		"title": "1학년 기업탐방에 대한 질문",
+		"id":"98765432....."
+	}
+]
+```
+
+api/chat/create
+# header
+
+```json
+{
+		"Authorization":"Bearer access_token, refresh_token"
+}
+```
+
+# request
+
+| 요청 파라미터(query parameter) | type | **description** |
+| --- | --- | --- |
+| provider | string | 사용자가 뭐로 로그인 했는지, google or kakao or naver |
+
+# response
+
+## 200 OK
+
+| **field** | **type** | **description** |
+| --- | --- | --- |
+| title | string | 채팅방 제목 |
+| id | string | 채팅방 ID |
+
+body example)
+
+```json
+{
+	"title":"오늘 급식 질문",
+	"id":"12345678....."
+}
+
+```
+**이미 새 채팅이라는 이름의 튜플있으면 새로 생성하지 않음!
+
+api/chat/update
+# header
+
+```json
+{
+		"Authorization":"Bearer access_token, refresh_token"
+}
+```
+
+# request
+
+| 요청 파라미터(query parameter) | type | **description** |
+| --- | --- | --- |
+| provider | string | 사용자가 뭐로 로그인 했는지, google or kakao or naver |
+
+### path parameter
+
+| **field** | **type** | **description** |
+| --- | --- | --- |
+| id | string | 채팅방 ID |
+
+## body
+
+| **field** | **type** | **description** |
+| --- | --- | --- |
+| message | string | 챗봇 대화 내용 |
+| role | string | user or assistant, 유저의 질문 메시지인지, ai의 답변 메시지인지 구별 |
+
+body example)
+
+```json
+{
+	"message":"질문:오늘 급식 뭐야? 답:밥입니다.",
+	"role": "user or assistant"
+}
+```
+
+# response
+
+## 200 OK
+
+| **field** | **type** | **description** |
+| --- | --- | --- |
+| title | string | 채팅 제목 |
+
+body example)
+
+```json
+{
+	"title":"오늘 급식 질문"
+}
+
+```
+**title이 기본(새 채팅)이고, 질문과 답변 메시지가 각각 1개씩 있다면(즉, 처음 대화면), title 생성
+
+api/chat/delete
+# header
+
+```json
+{
+		"Authorization":"Bearer access_token, refresh_token"
+}
+```
+
+# request
+
+| 요청 파라미터(query parameter) | type | **description** |
+| --- | --- | --- |
+| provider | string | 사용자가 뭐로 로그인 했는지, google or kakao or naver |
+
+### path parameter
+
+| **field** | **type** | **description** |
+| --- | --- | --- |
+| id | string | 채팅방 ID |
+
+# response
+
+없음

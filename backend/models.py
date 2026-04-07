@@ -5,14 +5,27 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import uuid
-
-# SQLAlchemy 기본 설저
-DATABASE_URL = "sqlite:///./test.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+from backend.database import Base
+from sqlalchemy.sql import func
 
 # SQLAlchemy 모델
+# class Chat(Base):
+#     __tablename__ = "chats"
+
+#     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     title = Column(String(100), default="새 채팅")
+#     created_at = Column(DateTime, default=func.now())
+
+
+# class Message(Base):
+#     __tablename__ = "messages"
+
+#     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     chat_id = Column(String(36), nullable=False)
+#     role = Column(String(10), nullable=False)  # "user" or "assistant"
+#     content = Column(Text, nullable=False)
+#     created_at = Column(DateTime, default=func.now())
+
 class User(Base):
     __tablename__ = "USERS"
     
@@ -56,6 +69,5 @@ class UserResponse(BaseModel):
     email: str
     provider: str
 
-# 테이블 생성
-Base.metadata.create_all(bind=engine)
+
 

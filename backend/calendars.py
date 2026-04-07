@@ -1,9 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 import json
-from models import CalendarItem
+import os
+from backend.models import CalendarItem
 
 app = FastAPI()
+router = APIRouter()
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,7 +15,7 @@ app.add_middleware(
 )
 
 # # GET으로 변경, 쿼리 파라미터 사용
-@app.get("/calendar", response_model=list[CalendarItem])
+@router.get("/calendar", response_model=list[CalendarItem])
 def get_calendar(year: int, month: int):
     target_prefix_hyphen = f"{year}-{month:02d}" 
     target_prefix_clean = f"{year}{month:02d}"  
@@ -43,3 +45,6 @@ def get_calendar(year: int, month: int):
 
     except Exception:
         return []
+
+
+app.include_router(router)
