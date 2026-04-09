@@ -7,3 +7,4 @@ data/
 .idea/
 test/
 backend/test.db
+dask.tar.gz

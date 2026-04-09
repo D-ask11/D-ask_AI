@@ -1,34 +1,62 @@
+# # FROM python:3.10-slim
+
+# # WORKDIR /app
+
+# # COPY requirements.txt .
+
+# # RUN pip install --no-cache-dir -r requirements.txt
+
+# # COPY . .
+
+# # EXPOSE 8000
+
+# # CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+
 # FROM python:3.10-slim
 
 # WORKDIR /app
 
-# COPY requirements.txt .
+# 1. 경로 수정: 프로젝트 루트 기준에서 ai 폴더 안의 파일을 지칭
+# COPY ai/requirements.txt .
 
+# RUN pip install --no-cache-dir onnxruntime
 # RUN pip install --no-cache-dir -r requirements.txt
 
+# 2. 소스 전체 복사 (루트의 .dockerignore가 불필요한 파일을 걸러줍니다)
 # COPY . .
+
+# 3. 환경 변수 추가: /app 폴더를 파이썬 패키지 경로로 인식하게 함
+# ENV PYTHONPATH=/app
+# ENV PYTHONUNBUFFERED=1
 
 # EXPOSE 8000
 
-# CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-
-
+# 4. 실행 경로 수정: ai 폴더 안의 main.py 내 app 객체 실행
+# CMD ["uvicorn", "ai.main:app", "--host", "0.0.0.0", "--port", "8000"]
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# 1. 경로 수정: 프로젝트 루트 기준에서 ai 폴더 안의 파일을 지칭
+# 빌드 도구 (onnxruntime 등 컴파일 의존성 대비)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# ✅ torch 계열 차단 constraint 파일 생성
+RUN printf 'torch==0.0.0\ntorchaudio==0.0.0\ntorchvision==0.0.0\n' > /tmp/no_torch.txt
+
 COPY ai/requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+# ✅ onnxruntime 선설치 후, constraint 적용하여 나머지 설치
+RUN pip install --no-cache-dir onnxruntime && \
+    pip install --no-cache-dir -c /tmp/no_torch.txt -r requirements.txt
 
-# 2. 소스 전체 복사 (루트의 .dockerignore가 불필요한 파일을 걸러줍니다)
 COPY . .
 
-# 3. 환경 변수 추가: /app 폴더를 파이썬 패키지 경로로 인식하게 함
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-# 4. 실행 경로 수정: ai 폴더 안의 main.py 내 app 객체 실행
 CMD ["uvicorn", "ai.main:app", "--host", "0.0.0.0", "--port", "8000"]

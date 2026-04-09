@@ -2,11 +2,6 @@ langchain==1.2.10
 langchain-community==0.4.1
 langchain-chroma==0.2.3
 langchain-google-genai==4.2.1
-langchain-huggingface>=0.1.5
-
-sentence-transformers==2.7.0
-chromadb==0.5.20
-
 fastapi==0.116.1
 uvicorn==0.40.0
 pydantic==2.10.6

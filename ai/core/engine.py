@@ -13,7 +13,7 @@ import json
 import re
 from typing import Dict, Any
 
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -31,12 +31,14 @@ class Dask_AI:
         # 유틸리티 및 로더 초기화
         self.loader = DocumentLoader(self.settings)
         
-        # AI 모델 설정
-        self.embeddings = HuggingFaceEmbeddings(
-                    model_name=self.settings.EMBED_MODEL,
-                    model_kwargs={"device": "cpu"}
-                )
+        # API 키 로드
         api_key = os.getenv("GOOGLE_API_KEY")
+        
+        # AI 모델 설정
+        self.embeddings = GoogleGenerativeAIEmbeddings(
+                    model=self.settings.EMBED_MODEL,
+                    google_api_key=api_key
+                )
         self.llm = ChatGoogleGenerativeAI(
             model=self.settings.LLM_MODEL,
             google_api_key=api_key,
