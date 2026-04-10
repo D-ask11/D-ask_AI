@@ -20,7 +20,7 @@ dotenv.load_dotenv()
 # Google OAuth 설정
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8001/auth/google/callback")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://134.185.108.144:8001/auth/google/callback")
 GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
@@ -28,7 +28,7 @@ GOOGLE_USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
 # Naver OAuth 설정
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-NAVER_REDIRECT_URI = os.getenv("NAVER_REDIRECT_URI", "http://localhost:8001/auth/naver/callback")
+NAVER_REDIRECT_URI = os.getenv("NAVER_REDIRECT_URI", "http://134.185.108.144:8001/auth/naver/callback")
 NAVER_AUTH_ENDPOINT = "https://nid.naver.com/oauth2.0/authorize"
 NAVER_TOKEN_ENDPOINT = "https://nid.naver.com/oauth2.0/token"
 NAVER_USERINFO_ENDPOINT = "https://openapi.naver.com/v1/nid/me"
@@ -36,7 +36,7 @@ NAVER_USERINFO_ENDPOINT = "https://openapi.naver.com/v1/nid/me"
 # Kakao OAuth 설정
 KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
 KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET")
-KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", "http://localhost:8001/auth/kakao/callback")
+KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", "http://134.185.108.144:8001/auth/kakao/callback")
 KAKAO_AUTH_ENDPOINT = "https://kauth.kakao.com/oauth/authorize"
 KAKAO_TOKEN_ENDPOINT = "https://kauth.kakao.com/oauth/token"
 KAKAO_USERINFO_ENDPOINT = "https://kapi.kakao.com/v2/user/me"
@@ -45,7 +45,7 @@ app = FastAPI()
 router = APIRouter()
 
 origins = [
-    "http://localhost:8000",
+    "http://134.185.108.144:8001",
     "http://127.0.0.1:8000",
 ]
 

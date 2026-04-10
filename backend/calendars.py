@@ -7,13 +7,6 @@ from backend.models import CalendarItem
 app = FastAPI()
 router = APIRouter()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://d-ask.vercel.app"],
-    allow_methods=["GET"], 
-    allow_headers=["Content-Type"],
-)
-
 # # GET으로 변경, 쿼리 파라미터 사용
 @router.get("/calendar", response_model=list[CalendarItem])
 def get_calendar(year: int, month: int):
