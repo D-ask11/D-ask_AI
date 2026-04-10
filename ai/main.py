@@ -7,13 +7,22 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from ai.core.engine import bot  # 절대 경로로 임포트하는 것이 가장 안전합니다.
 
 class QuestionRequest(BaseModel):
     question: str
 
-app = FastAPI()
+app = FastAPI(root_path="/ai", openapi_url="/openapi.json", docs_url="/docs")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 async def root():
