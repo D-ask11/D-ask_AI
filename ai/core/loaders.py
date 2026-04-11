@@ -82,34 +82,77 @@ class DocumentLoader:
         """할당량 제한(429)을 절대 넘지 않는 안전 모드"""
         all_docs = self.load_all_documents()
         chroma_dir = getattr(self.settings, 'DB_DIR', "/app/ai/chroma_db")
+        collection_name = getattr(self.settings, 'COLLECTION_NAME', 'langchain')
 
         if os.path.exists(chroma_dir) and os.listdir(chroma_dir):
-            return Chroma(persist_directory=chroma_dir, embedding_function=embeddings)
+            try:
+                vector_db = Chroma(
+                    collection_name=collection_name,
+                    persist_directory=chroma_dir,
+                    embedding_function=embeddings,
+                )
+                existing_count = vector_db._collection.count()
+                if all_docs and existing_count < len(all_docs):
+                    raise RuntimeError(
+                        f"부분적으로만 빌드된 VectorDB 발견: {existing_count} / {len(all_docs)}"
+                    )
+                vector_db.similarity_search("테스트", k=1)
+                return vector_db
+            except Exception as exc:
+                print(f"로그: 기존 VectorDB 로드 또는 검증 실패: {exc}. 재생성합니다.")
+                import chromadb
+                client_settings = chromadb.config.Settings(
+                    is_persistent=True,
+                    persist_directory=chroma_dir,
+                )
+                client = chromadb.Client(client_settings)
+                existing_collections = client.list_collections()
+                existing_names = [
+                    c if isinstance(c, str) else getattr(c, 'name', None)
+                    for c in existing_collections
+                ]
+                if collection_name in existing_names:
+                    client.delete_collection(name=collection_name)
 
         print(f"VectorDB 생성 시작 (총 {len(all_docs)}개 조각)...")
         
         import time
-        # ✅ 배치 크기를 30으로 키워서 요청 횟수(RPM) 자체를 줄입니다.
-        batch_size = 30 
+        # ✅ 배치 크기를 줄여 Google Embedding 쿼터 초과를 방지합니다.
+        batch_size = 10
         
         # 첫 번째 배치
         initial_batch = all_docs[:batch_size]
-        vector_db = Chroma.from_documents(
-            documents=initial_batch,
-            embedding=embeddings,
-            persist_directory=chroma_dir
-        )
-        print(f"로그: 첫 번째 배치 완료 (30 / {len(all_docs)})")
-        # 구글 API가 숨 돌릴 시간을 충분히 줍니다.
-        time.sleep(10) 
-        
-        # 나머지 배치
-        for i in range(batch_size, len(all_docs), batch_size):
-            batch = all_docs[i : i + batch_size]
-            vector_db.add_documents(batch)
-            print(f"로그: 벡터화 진행 중... ({min(i + len(batch), len(all_docs))} / {len(all_docs)})")
-            # ✅ 여기서 10초를 쉽니다. (조금 느려도 끊기는 것보다 낫습니다!)
-            time.sleep(10) 
+        try:
+            vector_db = Chroma.from_documents(
+                documents=initial_batch,
+                embedding=embeddings,
+                collection_name=collection_name,
+                persist_directory=chroma_dir
+            )
+            print(f"로그: 첫 번째 배치 완료 ({batch_size} / {len(all_docs)})")
+            time.sleep(10)
             
-        print("로그: VectorDB 생성 완료! 이제 PDF 질문이 가능합니다.")
-        return vector_db
+            # 나머지 배치
+            for i in range(batch_size, len(all_docs), batch_size):
+                batch = all_docs[i : i + batch_size]
+                retry_count = 0
+                while True:
+                    try:
+                        vector_db.add_documents(batch)
+                        break
+                    except Exception as exc:
+                        retry_count += 1
+                        message = str(exc)
+                        if retry_count >= 3 or "RESOURCE_EXHAUSTED" not in message:
+                            raise
+                        wait_seconds = 40
+                        print(f"로그: 임베딩 쿼터 초과. {wait_seconds}초 후 재시도합니다. (시도 {retry_count}/3)")
+                        time.sleep(wait_seconds)
+                print(f"로그: 벡터화 진행 중... ({min(i + len(batch), len(all_docs))} / {len(all_docs)})")
+                time.sleep(10)
+                
+            print("로그: VectorDB 생성 완료! 이제 PDF 질문이 가능합니다.")
+            return vector_db
+        except Exception as exc:
+            print(f"로그: VectorDB 생성 실패: {exc}. VectorDB를 사용할 수 없습니다.")
+            return None
