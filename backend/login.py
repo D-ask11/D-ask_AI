@@ -20,7 +20,7 @@ dotenv.load_dotenv()
 # Google OAuth 설정
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "https://d-ask.duckdns.org/api/auth/google/callback")
 GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
@@ -28,7 +28,7 @@ GOOGLE_USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
 # Naver OAuth 설정
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-NAVER_REDIRECT_URI = os.getenv("NAVER_REDIRECT_URI", "http://localhost:8000/auth/naver/callback")
+NAVER_REDIRECT_URI = os.getenv("NAVER_REDIRECT_URI", "https://d-ask.duckdns.org/api/auth/naver/callback")
 NAVER_AUTH_ENDPOINT = "https://nid.naver.com/oauth2.0/authorize"
 NAVER_TOKEN_ENDPOINT = "https://nid.naver.com/oauth2.0/token"
 NAVER_USERINFO_ENDPOINT = "https://openapi.naver.com/v1/nid/me"
@@ -36,7 +36,7 @@ NAVER_USERINFO_ENDPOINT = "https://openapi.naver.com/v1/nid/me"
 # Kakao OAuth 설정
 KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
 KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET")
-KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", "http://localhost:8000/auth/kakao/callback")
+KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", "https://d-ask.duckdns.org/api/auth/kakao/callback")
 KAKAO_AUTH_ENDPOINT = "https://kauth.kakao.com/oauth/authorize"
 KAKAO_TOKEN_ENDPOINT = "https://kauth.kakao.com/oauth/token"
 KAKAO_USERINFO_ENDPOINT = "https://kapi.kakao.com/v2/user/me"
@@ -45,10 +45,7 @@ app = FastAPI()
 router = APIRouter()
 
 origins = [
-    "http://localhost:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:8000",
+    "*"
 ]
 
 app.add_middleware(
@@ -85,7 +82,7 @@ def get_or_create_user(db: Session, email: str, provider: str):
     return user
 
 
-@router.get("/api/auth/get_all_users")
+@router.get("/auth/get_all_users")
 def get_all_users(db: Session = Depends(get_db)):
     users = db.query(User).all()
     return [
@@ -98,7 +95,7 @@ def get_all_users(db: Session = Depends(get_db)):
     ]
 
 
-@router.post("/api/auth/login")
+@router.post("/auth/login")
 def api_auth_login(provider: str = Query(...)):
     social_kind = provider.lower()
     state = str(uuid.uuid4())
@@ -184,7 +181,6 @@ def google_callback(code: str | None = None, state: str | None = None, db: Sessi
         headers={"Authorization": f"Bearer {access_token}"},
         timeout=10,
     )
-
     if userinfo_resp.status_code != 200:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Google 사용자 정보 조회 실패")
 
@@ -194,15 +190,14 @@ def google_callback(code: str | None = None, state: str | None = None, db: Sessi
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google 이메일 없음")
 
     get_or_create_user(db, email, "google")
-    
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={
-            "access_token": access_token,
-            "refresh_token": token_json.get("refresh_token"),
-            "provider": "google",
-        },
+    frontend_url="https://d-ask.vercel.app"
+    redirect_url = (
+        f"{frontend_url}/?"
+        f"access_token={access_token}&"
+        f"refresh_token={token_json.get('refresh_token', '')}&"
+        f"provider=google"
     )
+    return RedirectResponse(url=redirect_url)
 
 
 @router.get("/auth/naver/callback")
@@ -323,7 +318,7 @@ def kakao_callback(code: str | None = None, state: str | None = None, db: Sessio
     )
 
 
-@router.get("/api/auth/user")
+@router.get("/auth/user")
 def get_user_info(provider: str = Query(...), authorization: str = Header(...), db: Session = Depends(get_db)):
     supported = {"google", "naver", "kakao"}
     provider = provider.lower()

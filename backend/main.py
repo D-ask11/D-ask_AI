@@ -7,11 +7,30 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from backend.chat_history import router as chat_history_router
 from backend.calendars import router as calendars_router
 from backend.login import router as login_router
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from backend.database import engine, Base
+from backend import models
+# SQLAlchemy 기본 설저
+DATABASE_URL = "sqlite:///./test.db"
 
-app = FastAPI()
+# 테이블 생성
+models.Base.metadata.create_all(bind=engine)
+app = FastAPI(root_path="/api")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(chat_history_router)
 app.include_router(calendars_router)
 app.include_router(login_router)

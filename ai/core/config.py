@@ -19,6 +19,6 @@ class Settings:
     COLLECTION_NAME = "my_rag_collection"
     
     # 모델 설정
-    EMBED_MODEL = "intfloat/multilingual-e5-small"
+    EMBED_MODEL = "models/gemini-embedding-001"
     LLM_MODEL = "models/gemini-2.5-flash"
-    SIMILARITY_THRESHOLD = 0.25
+    SIMILARITY_THRESHOLD = 0.1

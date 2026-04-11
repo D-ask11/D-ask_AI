@@ -15,11 +15,19 @@ services:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
   backend:
-    build: ./backend
-    ports:
-      - "8001:8001"
-    volumes:
-      - ./data:/app/data
+      build:
+        context: .
+        dockerfile: ./backend/Dockerfile
+      ports:
+        - "8001:8001"
+      volumes:
+        - ./data:/app/data
+        - ./backend:/app/backend
+      env_file:
+        - .env
+      environment:
+        - PYTHONPATH=/app
+        - GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
   crawler:
     build: ./crawler
