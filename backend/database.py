@@ -15,6 +15,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-# 테이블 생성
-Base.metadata.create_all(bind=engine)

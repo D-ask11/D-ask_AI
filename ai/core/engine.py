@@ -162,18 +162,52 @@ class Dask_AI:
         return self._run_rag(question)
 
     def _run_rag(self, question: str) -> str:
-        """VectorDB와 LLM을 사용한 질의응답"""
         if not self.vector_db: return "데이터베이스가 준비되지 않았습니다."
         
-        results = self.vector_db.similarity_search_with_score(question, k=3)
-        # 설정값(Threshold)에 맞는 문서만 필터링
-        docs = [d for d, s in results if s <= self.settings.SIMILARITY_THRESHOLD]
+        # 1. PDF 우선 탐색 키워드 정의
+        pdf_keywords = ["인증제", "dsm", "기숙사", "우정관", "벌점", "상점", "규정"]
+        is_pdf_priority = any(kw in question.lower() for kw in pdf_keywords)
         
-        if not docs:
+        # 2. 검색 범위 확장 (k=50)
+        results = self.vector_db.similarity_search_with_score(question, k=50)
+        
+        pdf_docs = []
+        crawling_docs = []
+        
+        for doc, score in results:
+            source = doc.metadata.get('source', '')
+            if score <= 0.85: # 점수 기준 완화
+                if source.endswith('.pdf'):
+                    pdf_docs.append(doc)
+                else:
+                    crawling_docs.append(doc)
+
+        # 3. [핵심 로직] 키워드가 포함되어 있다면 PDF를 무조건 맨 앞으로!
+        if is_pdf_priority:
+            print(f"💡 키워드 감지됨! PDF 우선 모드로 동작합니다. (PDF 조각 {len(pdf_docs)}개)")
+            # PDF 조각들을 검색 결과 최상단으로 재배치
+            final_docs = pdf_docs + crawling_docs
+        else:
+            # 일반적인 검색 결과 유지
+            final_docs = [d for d, s in results if s <= 0.85]
+
+        if not final_docs:
             return "학교 관련 정보에서 답변을 찾을 수 없습니다."
+
+        # 4. LLM에게 전달할 문맥 생성 (최대 10개)
+        context = "\n\n".join([f"[출처: {d.metadata.get('source')}] {d.page_content}" for d in final_docs[:10]])
         
-        context = "\n".join([d.page_content for d in docs])
-        template = "당신은 학교 도우미 D-ASK입니다. 아래 문맥을 사용하여 질문에 답하세요.\n\n문맥:\n{context}\n\n질문: {question}\n\n답변: 단, 마크 다운 문법을 사용하지말고 답변하세요. 또한, pdf가 있을 경우 pdf 링크를 마지막에 출력해 주세요."
+        # 5. LLM 지시사항 강화
+        template = """당신은 대덕소프트웨어마이스터고 도우미 D-ASK입니다.
+제공된 문맥 중 'DSM 인증제'나 '기숙사' 관련 PDF 내용이 있다면 그 내용을 바탕으로 아주 상세하게 답변하세요.
+문맥에 없는 내용은 추측하지 말고 아는 범위 내에서만 답하세요.
+
+문맥:
+{context}
+
+질문: {question}
+
+답변:"""
         
         prompt = PromptTemplate.from_template(template)
         chain = prompt | self.llm | StrOutputParser()

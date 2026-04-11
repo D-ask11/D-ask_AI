@@ -11,8 +11,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.chat_history import router as chat_history_router
 from backend.calendars import router as calendars_router
 from backend.login import router as login_router
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from backend.database import engine, Base
+from backend import models
+# SQLAlchemy 기본 설저
+DATABASE_URL = "sqlite:///./test.db"
 
-app = FastAPI()
+# 테이블 생성
+models.Base.metadata.create_all(bind=engine)
+app = FastAPI(root_path="/api")
 
 app.add_middleware(
     CORSMiddleware,
