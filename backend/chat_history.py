@@ -22,7 +22,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-router = APIRouter(prefix="/chat")
+router = APIRouter(prefix="/api/chat")
 MAX_HISTORY = 20
 DEFAULT_TITLE = "새 채팅"
 

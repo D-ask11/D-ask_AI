@@ -42,7 +42,7 @@ KAKAO_TOKEN_ENDPOINT = "https://kauth.kakao.com/oauth/token"
 KAKAO_USERINFO_ENDPOINT = "https://kapi.kakao.com/v2/user/me"
 
 app = FastAPI()
-router = APIRouter()
+router = APIRouter(prefix="/api")
 
 origins = [
     "*"
