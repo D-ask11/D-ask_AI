@@ -7,22 +7,14 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from ai.core.engine import bot  # 절대 경로로 임포트하는 것이 가장 안전합니다.
 
 class QuestionRequest(BaseModel):
     question: str
+    user_id: str | None = None
 
-app = FastAPI(root_path="/ai", openapi_url="/openapi.json", docs_url="/docs")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI()
 
 @app.get("/")
 async def root():
@@ -39,6 +31,12 @@ async def rag_query_endpoint(request: QuestionRequest):
         return {"answer": answer}
     except Exception as e:
         return {"answer": f"서버 오류가 발생했습니다: {str(e)}"}
+
+@app.post("/ai/qna")
+async def rag_query_endpoint_with_prefix(request: QuestionRequest):
+    # Proxy setups sometimes keep the /ai prefix.
+    return await rag_query_endpoint(request)
+
 
 if __name__ == "__main__":
     import uvicorn
