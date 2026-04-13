@@ -47,7 +47,7 @@ def generate_ai_title(chat_id: str, content: str):
     try:
         # 모델명을 현재 사용 가능한 버전으로 변S경
         response = client.models.generate_content(
-            model="gemini-2.0-flash",  # 2.5는 존재하지 않습니다. 2.0 또는 1.5 사용
+            model="models/gemini-2.5-flash",
             contents=prompt
         )
         
@@ -119,9 +119,9 @@ def get_chat_messages(
     if not chat:
         raise HTTPException(status_code=404, detail="존재하지 않는 채팅방")
     messages = db.query(Message).filter(Message.room_id == chat_id).order_by(Message.created_at).all()
-    return [{"message_id": m.id, "content": m.content} for m in messages]
+    return [{"message_id": m.id, "content": m.content, "role": m.role} for m in messages]
 
-
+@router.post("/update/{chat_id}")
 @router.post("/update/{chat_id}")
 def update_chat(
     chat_id: str,
@@ -132,6 +132,7 @@ def update_chat(
 ):
     user_info = authenticate_user(provider, authorization, db)
     chat = db.query(Chatroom).filter(Chatroom.id == chat_id, Chatroom.id2 == user_info["user_id"]).first()
+    
     if not chat:
         raise HTTPException(status_code=404, detail="존재하지 않는 채팅방")
 
@@ -139,30 +140,17 @@ def update_chat(
     db.add(msg)
     db.commit()
 
-    # if chat.title == DEFAULT_TITLE:
-    #     messages = db.query(Message).filter(Message.room_id == chat_id).all()
-    #     user_count = len([m for m in messages if m.role == "user"])
-    #     assistant_count = len([m for m in messages if m.role == "assistant"])
-    #     if user_count == 1 and assistant_count == 1:
-    #         generate_ai_title(chat.id, payload.message)
-    #         db.refresh(chat)
-
-    # return {"title": chat.title}
-
     if chat.title == DEFAULT_TITLE:
-        messages = db.query(Message).filter(Message.id == chat_id).all()
+        messages = db.query(Message).filter(Message.room_id == chat_id).all()
         user_msgs = [m for m in messages if m.role == "user"]
         assistant_msgs = [m for m in messages if m.role == "assistant"]
         
-        # 유저가 질문하고, AI가 답변을 마친 시점(둘 다 메시지가 1개씩 있을 때)
         if len(user_msgs) == 1 and len(assistant_msgs) == 1:
-            # 중요: AI 답변이 아니라 유저의 '첫 번째 질문' 내용을 기반으로 제목 생성
             first_question = user_msgs[0].content
             generate_ai_title(chat.id, first_question)
-            db.refresh(chat) # 변경된 제목 반영
+            db.refresh(chat) # 변경된 제목을 객체에 반영
 
     return {"title": chat.title}
-
 
 @router.delete("/delete/{chat_id}")
 def delete_chat(
