@@ -22,7 +22,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-router = APIRouter(prefix="/api/chat")
+router = APIRouter(prefix="/chat")
 MAX_HISTORY = 20
 DEFAULT_TITLE = "새 채팅"
 
@@ -41,28 +41,29 @@ def build_gemini_contents(chat_messages: list) -> list:
 
 
 def generate_ai_title(chat_id: str, content: str):
-    prompt = f"""
-    다음 문장을 기반으로 채팅 제목을 만들어라.
-    조건:
-    - 다음은 문장을 기반으로 한 채팅 제목들입니다. 이런거 넣지말고 내용과 관련된 제목만 넣어라
-    - 반드시 '명사형 제목'으로 작성
-    - 질문 형태 금지
-    - 50단어 이하로 작성, 10단어 이하 권장
-    - 핵심 키워드만 사용
-    문장: {content}
-    """
+    # content에는 유저의 첫 질문이 전달되어야 합니다.
+    prompt = f"다음 문장을 요약해서 아주 짧은 채팅방 제목을 만들어줘(최대 10자, 특수문자 제외): {content}"
+    
     try:
-        db = next(get_db())
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-        if response and response.text:
-            title = response.text.strip().replace("\n", "")
-            chat = db.query(Chatroom).filter(Chatroom.id == chat_id).first()
-            if chat:
-                chat.title = title
-                db.commit()
-                logger.info(f"[{chat_id}] 제목 생성 완료: {title}")
+        # 모델명을 현재 사용 가능한 버전으로 변S경
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",  # 2.5는 존재하지 않습니다. 2.0 또는 1.5 사용
+            contents=prompt
+        )
+        
+        new_title = response.text.strip()
+        
+        # 새로운 DB 세션을 열어서 업데이트 (기존 방식 유지 시)
+        from backend.database import SessionLocal
+        db = SessionLocal()
+        chat = db.query(Chatroom).filter(Chatroom.id == chat_id).first()
+        if chat:
+            chat.title = new_title
+            db.commit()
+            logger.info(f"제목 업데이트 성공: {new_title}")
+        db.close()
     except Exception as e:
-        logger.error(f"[{chat_id}] 제목 생성 실패: {e}")
+        logger.error(f"제목 생성 실패: {str(e)}")
 
 
 def authenticate_user(provider: str, authorization: str, db: Session):
@@ -138,13 +139,27 @@ def update_chat(
     db.add(msg)
     db.commit()
 
+    # if chat.title == DEFAULT_TITLE:
+    #     messages = db.query(Message).filter(Message.room_id == chat_id).all()
+    #     user_count = len([m for m in messages if m.role == "user"])
+    #     assistant_count = len([m for m in messages if m.role == "assistant"])
+    #     if user_count == 1 and assistant_count == 1:
+    #         generate_ai_title(chat.id, payload.message)
+    #         db.refresh(chat)
+
+    # return {"title": chat.title}
+
     if chat.title == DEFAULT_TITLE:
-        messages = db.query(Message).filter(Message.room_id == chat_id).all()
-        user_count = len([m for m in messages if m.role == "user"])
-        assistant_count = len([m for m in messages if m.role == "assistant"])
-        if user_count == 1 and assistant_count == 1:
-            generate_ai_title(chat.id, payload.message)
-            db.refresh(chat)
+        messages = db.query(Message).filter(Message.id == chat_id).all()
+        user_msgs = [m for m in messages if m.role == "user"]
+        assistant_msgs = [m for m in messages if m.role == "assistant"]
+        
+        # 유저가 질문하고, AI가 답변을 마친 시점(둘 다 메시지가 1개씩 있을 때)
+        if len(user_msgs) == 1 and len(assistant_msgs) == 1:
+            # 중요: AI 답변이 아니라 유저의 '첫 번째 질문' 내용을 기반으로 제목 생성
+            first_question = user_msgs[0].content
+            generate_ai_title(chat.id, first_question)
+            db.refresh(chat) # 변경된 제목 반영
 
     return {"title": chat.title}
 

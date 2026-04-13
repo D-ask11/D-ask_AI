@@ -5,7 +5,7 @@ import os
 from backend.models import CalendarItem
 
 app = FastAPI()
-router = APIRouter(prefix="/api")
+router = APIRouter()
 
 # # GET으로 변경, 쿼리 파라미터 사용
 @router.get("/calendar", response_model=list[CalendarItem])

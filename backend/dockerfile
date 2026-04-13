@@ -1,8 +1,36 @@
+# FROM python:3.10-slim
+
+# WORKDIR /app
+
+# COPY backend/requirements.txt .
+
+# RUN pip install --no-cache-dir -r requirements.txt
+
+# COPY . .
+
+# ENV PYTHONPATH=/app
+
+# EXPOSE 8001
+
+# CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8001"]
+
 FROM python:3.10-slim
+
 WORKDIR /app
-COPY requirements.txt .
+
+# 1. 의존성 설치 (루트 기준 경로)
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
+
+# 2. backend 폴더 '통째로' 복사 (중요!)
+# 이렇게 하면 컨테이너 내부에 /app/backend/ 폴더가 생깁니다.
+COPY backend/ ./backend/
+
+# 3. 환경 변수 설정
+ENV PYTHONPATH=/app
+
 EXPOSE 8001
-# Serve a single backend app that includes calendar + auth/chat APIs expected by the FE.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+
+# 4. 실행 (루트인 /app에서 backend 패키지로서 실행)
+# 이렇게 해야 main.py 내부의 'from chat_history'가 아니라 'from backend.chat_history'가 작동합니다.
+CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8001"]
