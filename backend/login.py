@@ -317,9 +317,7 @@ def kakao_callback(code: str | None = None, state: str | None = None, db: Sessio
         },
     )
 
-
-@router.get("/auth/user")
-def get_user_info(provider: str = Query(...), authorization: str = Header(...), db: Session = Depends(get_db)):
+def get_user_info_internal(provider: str, authorization: str, db: Session):
     supported = {"google", "naver", "kakao"}
     provider = provider.lower()
     if provider not in supported:
@@ -485,6 +483,11 @@ def get_user_info(provider: str = Query(...), authorization: str = Header(...), 
         if not email:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Kakao 이메일 없음")
         return make_user_response(email, new_access, new_refresh)
+
+@router.get("/auth/user")
+def get_user_info(provider: str = Query(...), authorization: str = Header(...), db: Session = Depends(get_db)):
+    return get_user_info_internal(provider, authorization, db)
+    
 
 
 app.include_router(router)
