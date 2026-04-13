@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from google import genai
 from backend.database import get_db
 from backend.models import Chatroom, Message
-from backend.login import get_user_info
+from backend.login import get_user_info_internal
 import os
 from dotenv import load_dotenv
 
@@ -67,7 +67,7 @@ def generate_ai_title(chat_id: str, content: str):
 
 
 def authenticate_user(provider: str, authorization: str, db: Session):
-    user_info = get_user_info(provider, authorization, db=db)
+    user_info = get_user_info_internal(provider, authorization, db=db)
     return user_info
 
 
