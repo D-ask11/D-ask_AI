@@ -21,7 +21,7 @@ DATABASE_URL = "sqlite:///./test.db"
 
 # 테이블 생성
 models.Base.metadata.create_all(bind=engine)
-app = FastAPI(root_path="/api")
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,9 +31,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(chat_history_router)
-app.include_router(calendars_router)
-app.include_router(login_router)
+app.include_router(chat_history_router, prefix="/api")
+app.include_router(calendars_router, prefix="/api")
+app.include_router(login_router, prefix="/api")
 
 @app.get("/")
 async def root():
