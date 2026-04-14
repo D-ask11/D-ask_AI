@@ -326,11 +326,12 @@ def get_user_info_internal(provider: str, authorization: str, db: Session):
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="잘못된 Authorization 헤더")
 
-    tokens = authorization[7:].split(",")
-    if len(tokens) != 2:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="토큰 형식이 잘못됨")
+    token_parts = authorization[7:].split(",")
+    access_token = token_parts[0].strip()
+    refresh_token = token_parts[1].strip() if len(token_parts) > 1 else None
 
-    access_token, refresh_token = tokens
+    if not access_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="토큰 형식이 잘못됨")
 
     def parse_google_userinfo(token: str):
         resp = requests.get(
