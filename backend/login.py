@@ -446,43 +446,65 @@ def get_user_info_internal(provider: str, authorization: str, db: Session):
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="새 access_token 없음")
         email = parse_google_userinfo(new_access)
         if not email:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Google 이메일 없음")
-        return make_user_response(email, new_access, new_refresh)
+            if not refresh_token:
+                raise HTTPException(status_code=401, detail="액세스 토큰 만료 및 리프레시 토큰 없음")
+            new_tokens = refresh_google_tokens(refresh_token)
 
     if provider == "naver":
         require_env(NAVER_CLIENT_ID, "NAVER_CLIENT_ID")
         require_env(NAVER_CLIENT_SECRET, "NAVER_CLIENT_SECRET")
+        
         email = parse_naver_userinfo(access_token)
         if email:
             return make_user_response(email, access_token, refresh_token)
-        new_tokens = refresh_naver_tokens()
+        
+        if not refresh_token:
+            raise HTTPException(status_code=401, detail="Naver 인증 만료 및 리프레시 토큰 없음")
+            
+        new_tokens = refresh_naver_tokens(refresh_token) # 인자 전달 확인 필요
         if not new_tokens:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="토큰 리프레시 실패")
+            raise HTTPException(status_code=502, detail="Naver 토큰 리프레시 실패")
+            
         new_access = new_tokens.get("access_token")
         new_refresh = new_tokens.get("refresh_token") or refresh_token
+        
         if not new_access:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="새 access_token 없음")
+            raise HTTPException(status_code=502, detail="새 access_token 없음")
+            
         email = parse_naver_userinfo(new_access)
         if not email:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Naver 이메일 없음")
+            raise HTTPException(status_code=502, detail="Naver 이메일 없음")
         return make_user_response(email, new_access, new_refresh)
 
     if provider == "kakao":
         require_env(KAKAO_CLIENT_ID, "KAKAO_CLIENT_ID")
         require_env(KAKAO_CLIENT_SECRET, "KAKAO_CLIENT_SECRET")
+        
         email = parse_kakao_userinfo(access_token)
         if email:
             return make_user_response(email, access_token, refresh_token)
-        new_tokens = refresh_kakao_tokens()
+        
+        if not refresh_token:
+            raise HTTPException(
+                status_code=401, 
+                detail="카카오 인증 만료 및 리프레시 토큰 없음"
+            )
+            
+        new_tokens = refresh_kakao_tokens(refresh_token) 
+        
         if not new_tokens:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="토큰 리프레시 실패")
+            raise HTTPException(status_code=502, detail="카카오 토큰 리프레시 실패")
+            
         new_access = new_tokens.get("access_token")
         new_refresh = new_tokens.get("refresh_token") or refresh_token
+        
         if not new_access:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="새 access_token 없음")
+            raise HTTPException(status_code=502, detail="새 카카오 access_token 없음")
+            
         email = parse_kakao_userinfo(new_access)
         if not email:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Kakao 이메일 없음")
+            raise HTTPException(status_code=502, detail="카카오 이메일 없음")
+            
         return make_user_response(email, new_access, new_refresh)
 
 @router.get("/auth/user")
