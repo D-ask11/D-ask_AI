@@ -326,7 +326,7 @@ def get_user_info_internal(provider: str, authorization: str, db: Session):
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="잘못된 Authorization 헤더")
 
-    token_parts = authorization[7:].split(",")
+    token_parts = authorization[7:].strip().split(",")
     access_token = token_parts[0].strip()
     refresh_token = token_parts[1].strip() if len(token_parts) > 1 else None
 
