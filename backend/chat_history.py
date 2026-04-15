@@ -121,7 +121,7 @@ def get_chat_messages(
     messages = db.query(Message).filter(Message.room_id == chat_id).order_by(Message.created_at).all()
     return [{"message_id": m.id, "content": m.content, "role": m.role} for m in messages]
 
-@router.post("/update/{chat_id}")
+
 @router.post("/update/{chat_id}")
 def update_chat(
     chat_id: str,
@@ -140,15 +140,9 @@ def update_chat(
     db.add(msg)
     db.commit()
 
-    if chat.title == DEFAULT_TITLE:
-        messages = db.query(Message).filter(Message.room_id == chat_id).all()
-        user_msgs = [m for m in messages if m.role == "user"]
-        assistant_msgs = [m for m in messages if m.role == "assistant"]
-        
-        if len(user_msgs) == 1 and len(assistant_msgs) == 1:
-            first_question = user_msgs[0].content
-            generate_ai_title(chat.id, first_question)
-            db.refresh(chat) # 변경된 제목을 객체에 반영
+    if chat.title == DEFAULT_TITLE and payload.role == "user":
+        generate_ai_title(chat.id, payload.message)
+        db.refresh(chat) # 변경된 제목 반영
 
     return {"title": chat.title}
 
