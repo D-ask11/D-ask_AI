@@ -79,15 +79,6 @@ def create_chats(
 ):
     user_info = authenticate_user(provider, authorization, db)
     
-    # 기존 "새 채팅" 채팅방이 있는지 확인
-    existing_chat = db.query(Chatroom).filter(
-        Chatroom.id2 == user_info["user_id"],
-        Chatroom.title == DEFAULT_TITLE
-    ).first()
-    
-    if existing_chat:
-        return {"title": existing_chat.title, "id": existing_chat.id}
-    
     chat = Chatroom(title=DEFAULT_TITLE, id2=user_info["user_id"])
     db.add(chat)
     db.commit()
